@@ -32,6 +32,8 @@ class ResumeListItem(BaseModel):
     current_title: str | None = None
     skills: list[str] = Field(default_factory=list)
     total_experience_years: float | None = None
+    experience_extraction_method: str | None = None
+    experience_date_ranges: list[str] = Field(default_factory=list)
     companies: list[str] = Field(default_factory=list)
     education: list[str] = Field(default_factory=list)
     resume_summary: str = ""

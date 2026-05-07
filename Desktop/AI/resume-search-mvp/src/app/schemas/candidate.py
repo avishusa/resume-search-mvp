@@ -13,6 +13,12 @@ class CandidateProfile(BaseModel):
     companies: list[str] = Field(default_factory=list)
     education: list[str] = Field(default_factory=list)
     resume_summary: str = ""
+    experience_extraction_method: Literal[
+        "explicit_text",
+        "job_history_dates",
+        "unknown",
+    ] = "unknown"
+    experience_date_ranges: list[str] = Field(default_factory=list)
     confidence_score: float = Field(ge=0, le=1)
     parsing_status: Literal["parsed", "review_required", "failed"]
     parser_used: Literal["ollama", "rule_based"]
@@ -42,7 +48,13 @@ class CandidateProfile(BaseModel):
             return value
         return value.strip()
 
-    @field_validator("skills", "companies", "education", mode="before")
+    @field_validator(
+        "skills",
+        "companies",
+        "education",
+        "experience_date_ranges",
+        mode="before",
+    )
     @classmethod
     def normalize_string_list(cls, value: object) -> list[str]:
         if value is None:

@@ -1,150 +1,220 @@
-import re
-
 from app.repositories.resume_repository import InMemoryResumeRepository, ResumeRecord
-from app.schemas.job import JobSearchRequest, JobSearchResponse, JobSearchResult
-
-
-TITLE_WORDS = {
-    "ai",
-    "backend",
-    "data",
-    "developer",
-    "engineer",
-    "gen",
-    "learning",
-    "machine",
-    "python",
-    "software",
-}
+from app.schemas.job import (
+    JobSearchQuery,
+    JobSearchRequest,
+    JobSearchResponse,
+    JobSearchResult,
+)
+from app.services.matching import SkillMatcher, StrictTitleMatcher
 
 
 class ResumeSearchService:
-    def __init__(self, repository: InMemoryResumeRepository) -> None:
+    def __init__(
+        self,
+        repository: InMemoryResumeRepository,
+        title_matcher: StrictTitleMatcher | None = None,
+        skill_matcher: SkillMatcher | None = None,
+    ) -> None:
         self._repository = repository
+        self._title_matcher = title_matcher or StrictTitleMatcher()
+        self._skill_matcher = skill_matcher or SkillMatcher()
 
     def search(self, request: JobSearchRequest) -> JobSearchResponse:
+        candidates = [
+            resume
+            for resume in self._repository.list_all()
+            if self._is_searchable_resume(resume)
+        ]
+        title_matched_resumes = [
+            resume
+            for resume in candidates
+            if self.title_score(
+                request.job_title,
+                resume.candidate_profile.current_title if resume.candidate_profile else None,
+            )
+            > 0
+        ]
+        experience_matched_resumes = [
+            resume
+            for resume in title_matched_resumes
+            if self._passes_experience_filter(
+                resume.candidate_profile.total_experience_years
+                if resume.candidate_profile
+                else None,
+                request.min_years_experience,
+            )
+        ]
         results = [
             self._score_resume(request, resume)
-            for resume in self._repository.list_all()
+            for resume in experience_matched_resumes
         ]
-        title_matched_results = [result for result in results if result.title_score > 0]
         ranked_results = sorted(
-            title_matched_results,
+            results,
             key=lambda result: (
                 result.required_skill_score,
                 result.nice_to_have_skill_score,
+                result.experience_score,
                 result.overall_score,
             ),
             reverse=True,
         )
-        return JobSearchResponse(results=ranked_results)
+        return JobSearchResponse(
+            query=JobSearchQuery(
+                job_title=request.job_title,
+                required_skills=request.required_skills,
+                nice_to_have_skills=request.nice_to_have_skills,
+            ),
+            total_candidates_considered=len(candidates),
+            excluded_by_title_count=len(candidates) - len(title_matched_resumes),
+            excluded_by_experience_count=len(title_matched_resumes)
+            - len(experience_matched_resumes),
+            matched_count=len(ranked_results),
+            results=ranked_results,
+        )
 
-    def extract_current_title(self, resume_text: str) -> str | None:
-        for raw_line in resume_text.splitlines()[:20]:
-            line = raw_line.strip()
-            if not line or len(line) > 80:
-                continue
-
-            normalized_words = normalize_title_words(line)
-            if not normalized_words:
-                continue
-
-            has_role_word = any(word in {"engineer", "developer"} for word in normalized_words)
-            uses_known_title_words = all(word in TITLE_WORDS for word in normalized_words)
-            if has_role_word and uses_known_title_words:
-                return line
-
-        return None
-
-    def title_score(self, job_title: str, resume_title: str | None) -> int:
-        if resume_title is None:
-            return 0
-
-        job_words = normalize_title_words(job_title)
-        resume_words = normalize_title_words(resume_title)
-        if not job_words or not resume_words:
-            return 0
-
-        if job_words == resume_words:
-            return 100
-
-        if is_ordered_subset(job_words, resume_words) or is_ordered_subset(
-            resume_words, job_words
-        ):
-            return 70
-
-        return 0
+    def title_score(self, job_title: str, resume_title: str | None) -> float:
+        return self._title_matcher.score(job_title, resume_title)
 
     def match_skills(
         self,
-        resume_text: str,
         skills: list[str],
+        parsed_resume_skills: list[str] | str,
+        extracted_text: str = "",
     ) -> list[str]:
-        normalized_text = resume_text.lower()
-        return [skill for skill in skills if skill.lower() in normalized_text]
+        if isinstance(parsed_resume_skills, str):
+            parsed_resume_skills = parsed_resume_skills.split()
+        return self._skill_matcher.match(
+            requested_skills=skills,
+            parsed_resume_skills=parsed_resume_skills,
+            extracted_text=extracted_text,
+        )
 
     def _score_resume(
         self,
         request: JobSearchRequest,
         resume: ResumeRecord,
     ) -> JobSearchResult:
-        current_title = (
-            resume.candidate_profile.current_title
-            if resume.candidate_profile
-            else None
-        )
+        profile = resume.candidate_profile
+        current_title = profile.current_title if profile else None
+        parsed_skills = profile.skills if profile else []
         title_score = self.title_score(request.job_title, current_title)
-        searchable_skills_text = (
-            " ".join(resume.candidate_profile.skills)
-            if resume.candidate_profile
-            else ""
-        )
         matched_required = self.match_skills(
-            searchable_skills_text,
             request.required_skills,
+            parsed_skills,
+            resume.extracted_text,
         )
         matched_nice = self.match_skills(
-            searchable_skills_text,
             request.nice_to_have_skills,
+            parsed_skills,
+            resume.extracted_text,
         )
         missing_required = [
             skill for skill in request.required_skills if skill not in matched_required
         ]
-        required_score = len(matched_required)
-        nice_score = len(matched_nice)
-        overall_score = title_score + (required_score * 10) + (nice_score * 3)
+        required_score = self._skill_score(matched_required, request.required_skills)
+        nice_score = self._skill_score(matched_nice, request.nice_to_have_skills)
+        experience_score = self._experience_score(
+            profile.total_experience_years if profile else None,
+            request.min_years_experience,
+        )
+        overall_score = round(
+            (title_score * 0.5)
+            + (required_score * 0.35)
+            + (nice_score * 0.1)
+            + (experience_score * 0.05),
+            4,
+        )
 
         return JobSearchResult(
             resume_id=resume.resume_id,
             file_name=resume.file_name,
             source_path=resume.source_path,
+            candidate_name=profile.candidate_name if profile else None,
+            email=profile.email if profile else None,
+            phone=profile.phone if profile else None,
             current_title=current_title,
+            skills=parsed_skills,
+            total_experience_years=profile.total_experience_years if profile else None,
             title_score=title_score,
             required_skill_score=required_score,
             nice_to_have_skill_score=nice_score,
+            experience_score=experience_score,
             overall_score=overall_score,
             matched_required_skills=matched_required,
             missing_required_skills=missing_required,
             matched_nice_to_have_skills=matched_nice,
-            explanation=(
-                f"Title score {title_score}; matched {required_score} required "
-                f"skills and {nice_score} nice-to-have skills."
+            match_reason=self._build_match_reason(
+                title_score=title_score,
+                candidate_years=profile.total_experience_years if profile else None,
+                min_years_experience=request.min_years_experience,
+                matched_required=matched_required,
+                missing_required=missing_required,
+                matched_nice=matched_nice,
             ),
         )
 
+    def _is_searchable_resume(self, resume: ResumeRecord) -> bool:
+        return (
+            resume.extraction_status == "extracted"
+            and resume.parsing_status in {"parsed", "review_required"}
+            and resume.candidate_profile is not None
+        )
 
-def normalize_title_words(title: str) -> list[str]:
-    cleaned_title = re.sub(r"[^a-zA-Z0-9\s]", " ", title.lower()).strip()
-    return [word for word in cleaned_title.split() if word]
+    def _skill_score(self, matched_skills: list[str], requested_skills: list[str]) -> float:
+        if not requested_skills:
+            return 0
+        return round(len(matched_skills) / len(requested_skills), 4)
 
+    def _experience_score(
+        self,
+        candidate_years: float | None,
+        min_years_experience: float,
+    ) -> float:
+        if min_years_experience <= 0:
+            return 0
+        if candidate_years is None:
+            return 0
+        return 1 if candidate_years >= min_years_experience else 0
 
-def is_ordered_subset(needle: list[str], haystack: list[str]) -> bool:
-    if len(needle) >= len(haystack):
-        return False
+    def _passes_experience_filter(
+        self,
+        candidate_years: float | None,
+        min_years_experience: float,
+    ) -> bool:
+        if min_years_experience <= 0:
+            return True
+        if candidate_years is None:
+            return False
+        return candidate_years >= min_years_experience
 
-    position = 0
-    for word in haystack:
-        if position < len(needle) and needle[position] == word:
-            position += 1
+    def _build_match_reason(
+        self,
+        title_score: float,
+        candidate_years: float | None,
+        min_years_experience: float,
+        matched_required: list[str],
+        missing_required: list[str],
+        matched_nice: list[str],
+    ) -> str:
+        reason_parts = [f"Title matched with score {title_score}."]
+        if min_years_experience > 0 and candidate_years is not None:
+            reason_parts.append(
+                "Experience requirement met: "
+                f"{candidate_years:g} years >= {min_years_experience:g} years."
+            )
+        elif min_years_experience <= 0:
+            reason_parts.append("No minimum experience requirement provided.")
 
-    return position == len(needle)
+        reason_parts.append(
+            "Matched required skills: "
+            f"{', '.join(matched_required) if matched_required else 'none'}."
+        )
+        reason_parts.append(
+            "Missing required skills: "
+            f"{', '.join(missing_required) if missing_required else 'none'}."
+        )
+        reason_parts.append(
+            "Matched nice-to-have skills: "
+            f"{', '.join(matched_nice) if matched_nice else 'none'}."
+        )
+        return " ".join(reason_parts)

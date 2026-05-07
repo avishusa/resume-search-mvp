@@ -1,9 +1,52 @@
 from fastapi.testclient import TestClient
+from datetime import UTC, datetime
 
 from app.container import resume_batch_processor, resume_repository
 from app.main import create_app
 from app.parsing.rule_based import RuleBasedResumeParserProvider
+from app.repositories.resume_repository import ResumeRecord
+from app.schemas.candidate import CandidateProfile
 from app.services.candidate_profile_service import CandidateProfileService
+
+
+def _parsed_record(
+    resume_id: str,
+    file_name: str,
+    years: float | None,
+) -> ResumeRecord:
+    now = datetime.now(UTC)
+    return ResumeRecord(
+        resume_id=resume_id,
+        file_name=file_name,
+        source_path=f"/fake/{file_name}",
+        file_type="text/plain",
+        file_hash=resume_id,
+        last_modified=now,
+        extraction_status="extracted",
+        parsing_status="parsed",
+        parser_used="ollama",
+        parsing_error=None,
+        ollama_error=None,
+        ollama_raw_response_preview=None,
+        ollama_model="llama3.1:8b",
+        extracted_text="AI Engineer\nPython",
+        parsed_at=now,
+        ingested_at=now,
+        candidate_profile=CandidateProfile(
+            candidate_name=file_name,
+            email=f"{resume_id}@example.com",
+            phone=None,
+            current_title="AI Engineer",
+            skills=["Python"],
+            total_experience_years=years,
+            companies=[],
+            education=[],
+            resume_summary="",
+            confidence_score=0.9,
+            parsing_status="parsed",
+            parser_used="ollama",
+        ),
+    )
 
 
 def test_search_jd_returns_only_strict_title_matched_resumes(tmp_path, monkeypatch) -> None:
@@ -40,8 +83,15 @@ def test_search_jd_returns_only_strict_title_matched_resumes(tmp_path, monkeypat
 
     assert ingest_response.status_code == 200
     assert search_response.status_code == 200
-    results = search_response.json()["results"]
+    body = search_response.json()
+    assert body["query"]["job_title"] == "AI Engineer"
+    assert body["total_candidates_considered"] == 2
+    assert body["matched_count"] == 1
+    results = body["results"]
     assert [result["file_name"] for result in results] == ["ai-engineer.txt"]
+    assert results[0]["candidate_name"] is None
+    assert results[0]["current_title"] == "AI Engineer"
+    assert results[0]["matched_required_skills"] == ["Python"]
 
 
 def test_search_ranks_candidates_with_more_required_skills_higher(tmp_path, monkeypatch) -> None:
@@ -77,7 +127,9 @@ def test_search_ranks_candidates_with_more_required_skills_higher(tmp_path, monk
     )
 
     assert response.status_code == 200
-    results = response.json()["results"]
+    body = response.json()
+    assert body["matched_count"] == 2
+    results = body["results"]
     assert results[0]["file_name"] == "strong-ai-engineer.txt"
     assert results[0]["required_skill_score"] > results[1]["required_skill_score"]
 
@@ -117,4 +169,34 @@ def test_search_does_not_call_parser_during_search(tmp_path, monkeypatch) -> Non
     )
 
     assert response.status_code == 200
-    assert response.json()["results"][0]["file_name"] == "ai-engineer.txt"
+    body = response.json()
+    assert body["matched_count"] == 1
+    assert body["results"][0]["file_name"] == "ai-engineer.txt"
+
+
+def test_search_filters_by_min_years_experience_with_seeded_profiles() -> None:
+    resume_repository.clear()
+    resume_repository.save(_parsed_record("senior", "senior.txt", 6))
+    resume_repository.save(_parsed_record("mid", "mid.txt", 4))
+    resume_repository.save(_parsed_record("unknown", "unknown.txt", None))
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/jobs/search",
+        json={
+            "job_title": "AI Engineer",
+            "job_description": "AI role",
+            "required_skills": ["Python"],
+            "nice_to_have_skills": [],
+            "min_years_experience": 5,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_candidates_considered"] == 3
+    assert body["excluded_by_title_count"] == 0
+    assert body["excluded_by_experience_count"] == 2
+    assert body["matched_count"] == 1
+    assert [result["file_name"] for result in body["results"]] == ["senior.txt"]
+    assert "Experience requirement met: 6 years >= 5 years" in body["results"][0]["match_reason"]

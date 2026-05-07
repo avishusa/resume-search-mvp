@@ -67,6 +67,12 @@ def list_resumes() -> list[ResumeListItem]:
             total_experience_years=record.candidate_profile.total_experience_years
             if record.candidate_profile
             else None,
+            experience_extraction_method=record.candidate_profile.experience_extraction_method
+            if record.candidate_profile
+            else None,
+            experience_date_ranges=record.candidate_profile.experience_date_ranges
+            if record.candidate_profile
+            else [],
             companies=record.candidate_profile.companies if record.candidate_profile else [],
             education=record.candidate_profile.education if record.candidate_profile else [],
             resume_summary=record.candidate_profile.resume_summary
