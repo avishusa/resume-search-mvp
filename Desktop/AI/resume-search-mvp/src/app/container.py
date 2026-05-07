@@ -1,0 +1,9 @@
+from app.repositories.resume_repository import InMemoryResumeRepository
+from app.services.resume_ingestion_service import ResumeIngestionService
+from app.services.resume_search_service import ResumeSearchService
+from app.services.resume_service import ResumeUploadService
+
+resume_repository = InMemoryResumeRepository()
+resume_ingestion_service = ResumeIngestionService(repository=resume_repository)
+resume_upload_service = ResumeUploadService(ingestion_service=resume_ingestion_service)
+resume_search_service = ResumeSearchService(repository=resume_repository)

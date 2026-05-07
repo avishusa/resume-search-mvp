@@ -16,6 +16,9 @@ env/
 .env.*
 !.env.example
 
+data/drive_resumes/*
+!data/drive_resumes/.gitkeep
+
 dist/
 build/
 *.egg-info/

@@ -44,6 +44,40 @@ Expected response:
 }
 ```
 
+Upload a TXT resume:
+
+```powershell
+curl.exe -X POST "http://127.0.0.1:8000/resumes/upload" -F "file=@C:\path\to\resume.txt;type=text/plain"
+```
+
+## Local Drive Simulator
+
+For now, resumes should be placed in:
+
+```text
+data/drive_resumes/
+```
+
+Supported files are PDF, DOCX, and TXT. TXT extraction is implemented; PDF and DOCX are placeholders for now.
+
+Trigger local Drive ingestion:
+
+```powershell
+curl.exe -X POST "http://127.0.0.1:8000/resumes/ingest-local-drive"
+```
+
+List ingested resumes:
+
+```powershell
+curl.exe "http://127.0.0.1:8000/resumes"
+```
+
+Search ingested resumes with a job description:
+
+```powershell
+curl.exe -X POST "http://127.0.0.1:8000/jobs/search" -H "Content-Type: application/json" -d "{\"job_title\":\"AI Engineer\",\"job_description\":\"Build AI systems\",\"required_skills\":[\"Python\"],\"nice_to_have_skills\":[\"FastAPI\"]}"
+```
+
 ## Tests
 
 Run the test suite:
