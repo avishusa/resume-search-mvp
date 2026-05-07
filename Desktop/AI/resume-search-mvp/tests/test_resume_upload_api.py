@@ -1,11 +1,12 @@
 from fastapi.testclient import TestClient
 
-from app.container import resume_repository
+from app.container import resume_ingestion_service, resume_repository
 from app.main import create_app
 
 
-def test_upload_txt_resume_returns_extracted_preview() -> None:
+def test_upload_txt_resume_returns_extracted_preview(monkeypatch) -> None:
     resume_repository.clear()
+    monkeypatch.setattr(resume_ingestion_service, "_candidate_profile_service", None)
     client = TestClient(create_app())
 
     response = client.post(
@@ -30,8 +31,9 @@ def test_upload_txt_resume_returns_extracted_preview() -> None:
     )
 
 
-def test_upload_rejects_unsupported_file_type() -> None:
+def test_upload_rejects_unsupported_file_type(monkeypatch) -> None:
     resume_repository.clear()
+    monkeypatch.setattr(resume_ingestion_service, "_candidate_profile_service", None)
     client = TestClient(create_app())
 
     response = client.post(

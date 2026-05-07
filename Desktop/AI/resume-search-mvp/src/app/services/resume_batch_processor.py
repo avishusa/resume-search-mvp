@@ -11,11 +11,6 @@ from app.extraction.txt import TxtTextExtractor
 from app.repositories.resume_repository import InMemoryResumeRepository, ResumeRecord
 from app.schemas.resume import LocalDriveIngestionResponse, ResumeIngestionItem
 from app.services.candidate_profile_service import CandidateProfileService
-from app.services.resume_batch_processor import ResumeBatchProcessor
-
-
-class UnsupportedResumeFileTypeError(ValueError):
-    pass
 
 
 @dataclass(frozen=True)
@@ -24,17 +19,17 @@ class SupportedFileType:
     mime_type: str
 
 
-class ResumeIngestionService:
+class ResumeBatchProcessor:
     def __init__(
         self,
         repository: InMemoryResumeRepository,
+        candidate_profile_service: CandidateProfileService,
         local_drive_folder: Path | None = None,
         extractors: dict[str, TextExtractor] | None = None,
-        candidate_profile_service: CandidateProfileService | None = None,
     ) -> None:
         self._repository = repository
-        self._local_drive_folder = local_drive_folder or Path("data/drive_resumes")
         self._candidate_profile_service = candidate_profile_service
+        self._local_drive_folder = local_drive_folder or Path("data/drive_resumes")
         self._extractors = extractors or {
             "application/pdf": PdfTextExtractor(),
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document": DocxTextExtractor(),
@@ -49,49 +44,105 @@ class ResumeIngestionService:
             ".txt": SupportedFileType(".txt", "text/plain"),
         }
 
-    def ingest_uploaded_file(
-        self,
-        file_name: str,
-        mime_type: str | None,
-        file_bytes: bytes,
-    ) -> ResumeRecord:
-        normalized_mime_type = mime_type or self._mime_type_from_file_name(file_name)
-        if normalized_mime_type not in self._extractors:
-            raise UnsupportedResumeFileTypeError(
-                "Only PDF, DOCX, and TXT files are supported."
+    def process_local_drive(self, force: bool = False) -> LocalDriveIngestionResponse:
+        total_files_seen = 0
+        ingested_count = 0
+        updated_count = 0
+        skipped_count = 0
+        failed_count = 0
+        parsed_count = 0
+        fallback_count = 0
+        resumes: list[ResumeIngestionItem] = []
+
+        if not self._local_drive_folder.exists():
+            return LocalDriveIngestionResponse(
+                total_files_seen=0,
+                ingested_count=0,
+                updated_count=0,
+                skipped_count=0,
+                failed_count=0,
+                parsed_count=0,
+                fallback_count=0,
+                resumes=[],
             )
 
-        return self._create_resume_record(
-            file_name=file_name,
-            source_path=None,
-            mime_type=normalized_mime_type,
-            file_bytes=file_bytes,
+        for path in sorted(self._local_drive_folder.iterdir()):
+            if not path.is_file():
+                continue
+
+            total_files_seen += 1
+            file_type = self._supported_file_types.get(path.suffix.lower())
+            if file_type is None:
+                skipped_count += 1
+                continue
+
+            source_path = str(path.resolve())
+            try:
+                file_bytes = path.read_bytes()
+                file_hash = self._hash_file_bytes(file_bytes)
+                last_modified = datetime.fromtimestamp(path.stat().st_mtime, UTC)
+            except Exception:
+                failed_count += 1
+                continue
+
+            existing_record = self._repository.get_by_source_path(source_path)
+            if existing_record and existing_record.file_hash == file_hash and not force:
+                skipped_count += 1
+                resumes.append(self._to_ingestion_item(existing_record))
+                continue
+
+            is_update = existing_record is not None
+            record = self._process_file(
+                resume_id=existing_record.resume_id if existing_record else str(uuid4()),
+                file_name=path.name,
+                source_path=source_path,
+                file_type=file_type.mime_type,
+                file_hash=file_hash,
+                last_modified=last_modified,
+                file_bytes=file_bytes,
+                previous_ingested_at=existing_record.ingested_at
+                if existing_record
+                else None,
+            )
+
+            if record.extraction_status == "failed":
+                failed_count += 1
+            elif is_update:
+                updated_count += 1
+            else:
+                ingested_count += 1
+
+            if record.candidate_profile is not None:
+                parsed_count += 1
+            if record.parser_used == "rule_based" and record.parsing_error:
+                fallback_count += 1
+
+            resumes.append(self._to_ingestion_item(record))
+
+        return LocalDriveIngestionResponse(
+            total_files_seen=total_files_seen,
+            ingested_count=ingested_count,
+            updated_count=updated_count,
+            skipped_count=skipped_count,
+            failed_count=failed_count,
+            parsed_count=parsed_count,
+            fallback_count=fallback_count,
+            resumes=resumes,
         )
 
-    def ingest_local_drive(self, force: bool = False) -> LocalDriveIngestionResponse:
-        if self._candidate_profile_service is None:
-            from app.parsing.rule_based import RuleBasedResumeParserProvider
-
-            self._candidate_profile_service = CandidateProfileService(
-                primary_parser=RuleBasedResumeParserProvider(),
-                fallback_parser=RuleBasedResumeParserProvider(),
-            )
-
-        return ResumeBatchProcessor(
-            repository=self._repository,
-            candidate_profile_service=self._candidate_profile_service,
-            local_drive_folder=self._local_drive_folder,
-            extractors=self._extractors,
-        ).process_local_drive(force=force)
-
-    def _create_resume_record(
+    def _process_file(
         self,
+        resume_id: str,
         file_name: str,
-        source_path: str | None,
-        mime_type: str,
+        source_path: str,
+        file_type: str,
+        file_hash: str,
+        last_modified: datetime,
         file_bytes: bytes,
+        previous_ingested_at: datetime | None,
     ) -> ResumeRecord:
-        extractor = self._extractors[mime_type]
+        now = datetime.now(UTC)
+        extractor = self._extractors[file_type]
         extraction = extractor.extract(file_bytes)
         candidate_profile = None
         parsing_status = None
@@ -101,8 +152,8 @@ class ResumeIngestionService:
         ollama_raw_response_preview = None
         ollama_model = None
         parsed_at = None
-        now = datetime.now(UTC)
-        if extraction.status == "extracted" and self._candidate_profile_service:
+
+        if extraction.status == "extracted":
             parse_result = self._candidate_profile_service.parse_with_metadata(
                 extraction.text
             )
@@ -114,18 +165,18 @@ class ResumeIngestionService:
             ollama_raw_response_preview = parse_result.ollama_raw_response_preview
             ollama_model = parse_result.ollama_model
             parsed_at = now
-        elif extraction.status != "extracted":
+        else:
             parsing_status = "failed"
             parsing_error = f"Parsing skipped because extraction_status={extraction.status}."
             ollama_error = parsing_error
 
         record = ResumeRecord(
-            resume_id=str(uuid4()),
+            resume_id=resume_id,
             file_name=file_name,
             source_path=source_path,
-            file_type=mime_type,
-            file_hash=hashlib.sha256(file_bytes).hexdigest(),
-            last_modified=None,
+            file_type=file_type,
+            file_hash=file_hash,
+            last_modified=last_modified,
             extraction_status=extraction.status,
             parsing_status=parsing_status,
             parser_used=parser_used,
@@ -135,16 +186,13 @@ class ResumeIngestionService:
             ollama_model=ollama_model,
             extracted_text=extraction.text,
             parsed_at=parsed_at,
-            ingested_at=now,
+            ingested_at=previous_ingested_at or now,
             candidate_profile=candidate_profile,
         )
         return self._repository.save(record)
 
-    def _mime_type_from_file_name(self, file_name: str) -> str:
-        file_type = self._supported_file_types.get(Path(file_name).suffix.lower())
-        if file_type is None:
-            return "application/octet-stream"
-        return file_type.mime_type
+    def _hash_file_bytes(self, file_bytes: bytes) -> str:
+        return hashlib.sha256(file_bytes).hexdigest()
 
     def _to_ingestion_item(self, record: ResumeRecord) -> ResumeIngestionItem:
         return ResumeIngestionItem(
@@ -167,3 +215,9 @@ class ResumeIngestionService:
             ingested_at=record.ingested_at.isoformat(),
             extracted_text_preview=record.extracted_text_preview,
         )
+
+
+def run_nightly_resume_batch(
+    batch_processor: ResumeBatchProcessor,
+) -> LocalDriveIngestionResponse:
+    return batch_processor.process_local_drive()

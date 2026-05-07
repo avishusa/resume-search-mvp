@@ -1,0 +1,259 @@
+import json
+
+import httpx
+
+from app.parsing.ollama import OllamaResumeParserProvider
+from app.parsing.rule_based import RuleBasedResumeParserProvider
+from app.services.candidate_profile_service import CandidateProfileService
+
+
+class FakeOllamaResponse:
+    def __init__(self, body: dict | None = None, error: Exception | None = None) -> None:
+        self._body = body or {}
+        self._error = error
+
+    def raise_for_status(self) -> None:
+        if self._error:
+            raise self._error
+
+    def json(self) -> dict:
+        return self._body
+
+
+class FakeOllamaClient:
+    def __init__(self, response: FakeOllamaResponse) -> None:
+        self._response = response
+        self.last_url: str | None = None
+        self.last_payload: dict | None = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        return None
+
+    def post(self, url: str, json: dict) -> FakeOllamaResponse:
+        self.last_url = url
+        self.last_payload = json
+        return self._response
+
+
+def _service_with_fake_ollama(monkeypatch, response: FakeOllamaResponse) -> CandidateProfileService:
+    monkeypatch.setattr(
+        "app.parsing.ollama.httpx.Client",
+        lambda timeout: FakeOllamaClient(response),
+    )
+    return CandidateProfileService(
+        primary_parser=OllamaResumeParserProvider(
+            base_url="http://localhost:11434",
+            model="llama3.1:8b",
+            timeout_seconds=1,
+        ),
+        fallback_parser=RuleBasedResumeParserProvider(skill_catalog=["Python"]),
+    )
+
+
+def test_ollama_provider_posts_to_generate_and_parses_response_field(monkeypatch) -> None:
+    fake_client = FakeOllamaClient(
+        FakeOllamaResponse(
+            {
+                "response": json.dumps(
+                    {
+                        "candidate_name": "Jane Candidate",
+                        "email": None,
+                        "phone": None,
+                        "current_title": "AI Engineer",
+                        "skills": ["Python"],
+                        "total_experience_years": None,
+                        "companies": [],
+                        "education": [],
+                        "resume_summary": "AI Engineer with Python.",
+                        "confidence_score": 0.8,
+                    }
+                ),
+                "model": "llama3.1:8b",
+            }
+        )
+    )
+    monkeypatch.setattr(
+        "app.parsing.ollama.httpx.Client",
+        lambda timeout: fake_client,
+    )
+    provider = OllamaResumeParserProvider(
+        base_url="http://localhost:11434",
+        model="llama3.1:8b",
+        timeout_seconds=3,
+    )
+
+    profile = provider.parse("AI Engineer\nPython")
+
+    assert fake_client.last_url == "http://localhost:11434/api/generate"
+    assert fake_client.last_payload["model"] == "llama3.1:8b"
+    assert fake_client.last_payload["stream"] is False
+    assert fake_client.last_payload["format"] == "json"
+    assert set(fake_client.last_payload) == {"model", "prompt", "stream", "format"}
+    assert profile.parser_used == "ollama"
+    assert profile.current_title == "AI Engineer"
+
+
+def test_successful_mocked_ollama_response_returns_ollama_parser(monkeypatch) -> None:
+    service = _service_with_fake_ollama(
+        monkeypatch,
+        FakeOllamaResponse(
+            {
+                "response": json.dumps(
+                    {
+                        "candidate_name": "Jane Candidate",
+                        "email": "jane@example.com",
+                        "phone": "312-555-1212",
+                        "current_title": "AI Engineer",
+                        "skills": ["Python"],
+                        "total_experience_years": 5,
+                        "companies": ["Acme"],
+                        "education": ["BS Computer Science"],
+                        "resume_summary": "AI Engineer with Python experience.",
+                        "confidence_score": 0.91,
+                    }
+                )
+            }
+        ),
+    )
+
+    profile = service.parse("AI Engineer\njane@example.com\nPython")
+
+    assert profile.parser_used == "ollama"
+    assert profile.parsing_status == "parsed"
+    assert profile.candidate_name == "Jane Candidate"
+    assert profile.current_title == "AI Engineer"
+    assert profile.skills == ["Python"]
+
+
+def test_ollama_string_confidence_score_still_returns_ollama(monkeypatch) -> None:
+    service = _service_with_fake_ollama(
+        monkeypatch,
+        FakeOllamaResponse(
+            {
+                "response": json.dumps(
+                    {
+                        "candidate_name": "Jane Candidate",
+                        "email": "jane@example.com",
+                        "phone": None,
+                        "current_title": "AI Engineer",
+                        "skills": ["Python", "python"],
+                        "total_experience_years": None,
+                        "companies": [],
+                        "education": [],
+                        "resume_summary": "AI Engineer with Python.",
+                        "confidence_score": "0.85",
+                    }
+                )
+            }
+        ),
+    )
+
+    result = service.parse_with_metadata("AI Engineer\njane@example.com\nPython")
+
+    assert result.profile.parser_used == "ollama"
+    assert result.profile.confidence_score == 0.85
+    assert result.profile.skills == ["Python"]
+
+
+def test_ollama_null_confidence_score_still_returns_ollama(monkeypatch) -> None:
+    service = _service_with_fake_ollama(
+        monkeypatch,
+        FakeOllamaResponse(
+            {
+                "response": json.dumps(
+                    {
+                        "candidate_name": "Jane Candidate",
+                        "email": "jane@example.com",
+                        "phone": None,
+                        "current_title": "AI Engineer",
+                        "skills": ["Python"],
+                        "total_experience_years": None,
+                        "companies": [],
+                        "education": [],
+                        "resume_summary": "AI Engineer with Python.",
+                        "confidence_score": None,
+                    }
+                )
+            }
+        ),
+    )
+
+    result = service.parse_with_metadata("AI Engineer\njane@example.com\nPython")
+
+    assert result.profile.parser_used == "ollama"
+    assert result.profile.confidence_score > 0
+    assert result.parsing_error is None
+
+
+def test_ollama_text_confidence_score_still_returns_ollama_with_calculated_score(
+    monkeypatch,
+) -> None:
+    service = _service_with_fake_ollama(
+        monkeypatch,
+        FakeOllamaResponse(
+            {
+                "response": json.dumps(
+                    {
+                        "candidate_name": "Jane Candidate",
+                        "email": "jane@example.com",
+                        "phone": "312-555-1212",
+                        "current_title": "AI Engineer",
+                        "skills": ["Python"],
+                        "total_experience_years": None,
+                        "companies": [],
+                        "education": [],
+                        "resume_summary": "AI Engineer with Python.",
+                        "confidence_score": "high",
+                    }
+                )
+            }
+        ),
+    )
+
+    result = service.parse_with_metadata("AI Engineer\njane@example.com\nPython")
+
+    assert result.profile.parser_used == "ollama"
+    assert 0 < result.profile.confidence_score <= 1
+    assert result.parsing_error is None
+
+
+def test_invalid_ollama_json_triggers_rule_based_fallback(monkeypatch) -> None:
+    service = _service_with_fake_ollama(
+        monkeypatch,
+        FakeOllamaResponse({"response": "{not valid json"}),
+    )
+
+    profile = service.parse("AI Engineer\njane@example.com\nPython")
+
+    assert profile.parser_used == "rule_based"
+    assert profile.email == "jane@example.com"
+    assert profile.current_title == "AI Engineer"
+
+
+def test_invalid_ollama_json_records_ollama_error(monkeypatch) -> None:
+    service = _service_with_fake_ollama(
+        monkeypatch,
+        FakeOllamaResponse({"response": "{not valid json"}),
+    )
+
+    result = service.parse_with_metadata("AI Engineer\njane@example.com\nPython")
+
+    assert result.profile.parser_used == "rule_based"
+    assert result.ollama_error is not None
+    assert "Ollama resume parsing failed" in result.ollama_error
+    assert result.ollama_raw_response_preview == "{not valid json"
+
+
+def test_ollama_error_triggers_rule_based_fallback(monkeypatch) -> None:
+    service = _service_with_fake_ollama(
+        monkeypatch,
+        FakeOllamaResponse(error=httpx.TimeoutException("timeout")),
+    )
+
+    profile = service.parse("AI Engineer\njane@example.com\nPython")
+
+    assert profile.parser_used == "rule_based"
+    assert profile.email == "jane@example.com"

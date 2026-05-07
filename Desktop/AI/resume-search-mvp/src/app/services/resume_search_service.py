@@ -88,14 +88,23 @@ class ResumeSearchService:
         request: JobSearchRequest,
         resume: ResumeRecord,
     ) -> JobSearchResult:
-        current_title = self.extract_current_title(resume.extracted_text)
+        current_title = (
+            resume.candidate_profile.current_title
+            if resume.candidate_profile
+            else None
+        )
         title_score = self.title_score(request.job_title, current_title)
+        searchable_skills_text = (
+            " ".join(resume.candidate_profile.skills)
+            if resume.candidate_profile
+            else ""
+        )
         matched_required = self.match_skills(
-            resume.extracted_text,
+            searchable_skills_text,
             request.required_skills,
         )
         matched_nice = self.match_skills(
-            resume.extracted_text,
+            searchable_skills_text,
             request.nice_to_have_skills,
         )
         missing_required = [

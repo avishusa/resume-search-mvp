@@ -66,6 +66,8 @@ Trigger local Drive ingestion:
 curl.exe -X POST "http://127.0.0.1:8000/resumes/ingest-local-drive"
 ```
 
+This endpoint uses the same batch-processing flow intended for a future nightly job. It scans the folder, skips unchanged files by file hash, reprocesses changed files, extracts text, parses candidate profiles, and stores results in memory.
+
 List ingested resumes:
 
 ```powershell
@@ -76,6 +78,26 @@ Search ingested resumes with a job description:
 
 ```powershell
 curl.exe -X POST "http://127.0.0.1:8000/jobs/search" -H "Content-Type: application/json" -d "{\"job_title\":\"AI Engineer\",\"job_description\":\"Build AI systems\",\"required_skills\":[\"Python\"],\"nice_to_have_skills\":[\"FastAPI\"]}"
+```
+
+## Candidate Profile Parsing
+
+Resume ingestion parses extracted text into a structured candidate profile. The default parser uses local Ollama and falls back to rule-based parsing if Ollama fails, times out, returns invalid JSON, or returns invalid profile data.
+
+Default configuration:
+
+```text
+RESUME_PARSER_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.1:8b
+OLLAMA_TIMEOUT_SECONDS=60
+OLLAMA_MAX_RESUME_CHARS=12000
+```
+
+To use the fallback parser as the primary parser during development:
+
+```powershell
+$env:RESUME_PARSER_PROVIDER="rule_based"
 ```
 
 ## Tests
