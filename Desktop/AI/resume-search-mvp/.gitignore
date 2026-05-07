@@ -18,6 +18,9 @@ env/
 
 data/drive_resumes/*
 !data/drive_resumes/.gitkeep
+data/drive_resumes/
+data/resume_search.db
+data/*.db
 
 dist/
 build/

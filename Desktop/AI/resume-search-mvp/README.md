@@ -92,7 +92,10 @@ OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=llama3.1:8b
 OLLAMA_TIMEOUT_SECONDS=60
 OLLAMA_MAX_RESUME_CHARS=12000
+DATABASE_URL=sqlite:///./data/resume_search.db
 ```
+
+The SQLite database tables are created automatically when the API starts. The database file lives under `data/` and is ignored by git.
 
 To use the fallback parser as the primary parser during development:
 

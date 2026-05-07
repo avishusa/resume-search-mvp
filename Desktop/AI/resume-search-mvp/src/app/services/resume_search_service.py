@@ -22,7 +22,7 @@ class ResumeSearchService:
     def search(self, request: JobSearchRequest) -> JobSearchResponse:
         candidates = [
             resume
-            for resume in self._repository.list_all()
+            for resume in self._list_searchable_resumes()
             if self._is_searchable_resume(resume)
         ]
         title_matched_resumes = [
@@ -159,6 +159,11 @@ class ResumeSearchService:
             and resume.parsing_status in {"parsed", "review_required"}
             and resume.candidate_profile is not None
         )
+
+    def _list_searchable_resumes(self) -> list[ResumeRecord]:
+        if hasattr(self._repository, "list_searchable"):
+            return self._repository.list_searchable()
+        return self._repository.list_all()
 
     def _skill_score(self, matched_skills: list[str], requested_skills: list[str]) -> float:
         if not requested_skills:

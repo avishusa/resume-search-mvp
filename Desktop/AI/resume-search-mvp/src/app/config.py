@@ -26,6 +26,10 @@ class Settings(BaseSettings):
         12000,
         validation_alias="OLLAMA_MAX_RESUME_CHARS",
     )
+    database_url: str = Field(
+        "sqlite:///./data/resume_search.db",
+        validation_alias="DATABASE_URL",
+    )
     skill_catalog: str = Field(
         "Python,FastAPI,Docker,LLM,LangChain,SQL,PostgreSQL,AWS,Azure,GCP,"
         "Machine Learning,Data Engineering,JavaScript,TypeScript,React",

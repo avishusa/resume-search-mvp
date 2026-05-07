@@ -1,7 +1,7 @@
 from app.config import get_settings
 from app.parsing.ollama import OllamaResumeParserProvider
 from app.parsing.rule_based import RuleBasedResumeParserProvider
-from app.repositories.resume_repository import InMemoryResumeRepository
+from app.repositories.sqlalchemy_resume_repository import SQLAlchemyResumeRepository
 from app.services.candidate_profile_service import CandidateProfileService
 from app.services.debug_service import DebugService
 from app.services.resume_batch_processor import ResumeBatchProcessor
@@ -10,7 +10,7 @@ from app.services.resume_search_service import ResumeSearchService
 from app.services.resume_service import ResumeUploadService
 
 settings = get_settings()
-resume_repository = InMemoryResumeRepository()
+resume_repository = SQLAlchemyResumeRepository()
 
 skill_catalog = [
     skill.strip()

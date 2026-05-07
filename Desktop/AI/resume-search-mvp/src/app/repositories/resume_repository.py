@@ -22,6 +22,8 @@ class ResumeRecord:
     extracted_text: str
     parsed_at: datetime | None
     ingested_at: datetime
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
     candidate_profile: CandidateProfile | None = None
 
     @property
@@ -53,8 +55,27 @@ class InMemoryResumeRepository:
             return None
         return self.get(resume_id)
 
+    def get_by_source_path_and_file_hash(
+        self,
+        source_path: str,
+        file_hash: str,
+    ) -> ResumeRecord | None:
+        record = self.get_by_source_path(source_path)
+        if record is None or record.file_hash != file_hash:
+            return None
+        return record
+
     def list_all(self) -> list[ResumeRecord]:
         return list(self._records.values())
+
+    def list_searchable(self) -> list[ResumeRecord]:
+        return [
+            record
+            for record in self.list_all()
+            if record.extraction_status == "extracted"
+            and record.parsing_status in {"parsed", "review_required"}
+            and record.candidate_profile is not None
+        ]
 
     def clear(self) -> None:
         self._records.clear()
