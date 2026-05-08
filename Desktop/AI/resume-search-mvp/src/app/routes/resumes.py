@@ -38,6 +38,11 @@ def ingest_local_drive(force: bool = False) -> LocalDriveIngestionResponse:
             status_code=status.HTTP_409_CONFLICT,
             detail=str(error),
         ) from error
+    except Exception as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(error),
+        ) from error
     return summary
 
 

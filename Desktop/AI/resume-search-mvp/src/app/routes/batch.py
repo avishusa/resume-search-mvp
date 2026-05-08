@@ -16,6 +16,28 @@ def run_local_drive_batch(force: bool = False) -> BatchRunResponse:
             status_code=status.HTTP_409_CONFLICT,
             detail=str(error),
         ) from error
+    except Exception as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(error),
+        ) from error
+    return _to_response(batch_run)
+
+
+@router.post("/run", response_model=BatchRunResponse)
+def run_configured_batch(force: bool = False) -> BatchRunResponse:
+    try:
+        batch_run, _summary = batch_processing_service.run_batch(force=force)
+    except BatchAlreadyRunningError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(error),
+        ) from error
+    except Exception as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(error),
+        ) from error
     return _to_response(batch_run)
 
 

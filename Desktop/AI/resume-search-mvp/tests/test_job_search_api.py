@@ -1,7 +1,11 @@
 from fastapi.testclient import TestClient
 from datetime import UTC, datetime
 
-from app.container import batch_processing_service, resume_batch_processor, resume_repository
+from app.container import (
+    batch_processing_service,
+    local_resume_batch_processor,
+    resume_repository,
+)
 from app.main import create_app
 from app.parsing.rule_based import RuleBasedResumeParserProvider
 from app.repositories.resume_repository import ResumeRecord
@@ -53,12 +57,12 @@ def _parsed_record(
 def test_search_jd_returns_only_strict_title_matched_resumes(tmp_path, monkeypatch) -> None:
     resume_repository.clear()
     monkeypatch.setattr(
-        resume_batch_processor,
+        local_resume_batch_processor,
         "_storage_provider",
         LocalFolderResumeStorageProvider(tmp_path),
     )
     monkeypatch.setattr(
-        resume_batch_processor,
+        local_resume_batch_processor,
         "_candidate_profile_service",
         CandidateProfileService(
             primary_parser=RuleBasedResumeParserProvider(),
@@ -102,12 +106,12 @@ def test_search_jd_returns_only_strict_title_matched_resumes(tmp_path, monkeypat
 def test_search_ranks_candidates_with_more_required_skills_higher(tmp_path, monkeypatch) -> None:
     resume_repository.clear()
     monkeypatch.setattr(
-        resume_batch_processor,
+        local_resume_batch_processor,
         "_storage_provider",
         LocalFolderResumeStorageProvider(tmp_path),
     )
     monkeypatch.setattr(
-        resume_batch_processor,
+        local_resume_batch_processor,
         "_candidate_profile_service",
         CandidateProfileService(
             primary_parser=RuleBasedResumeParserProvider(),
@@ -146,12 +150,12 @@ def test_search_ranks_candidates_with_more_required_skills_higher(tmp_path, monk
 def test_search_does_not_call_parser_during_search(tmp_path, monkeypatch) -> None:
     resume_repository.clear()
     monkeypatch.setattr(
-        resume_batch_processor,
+        local_resume_batch_processor,
         "_storage_provider",
         LocalFolderResumeStorageProvider(tmp_path),
     )
     monkeypatch.setattr(
-        resume_batch_processor,
+        local_resume_batch_processor,
         "_candidate_profile_service",
         CandidateProfileService(
             primary_parser=RuleBasedResumeParserProvider(),
@@ -167,7 +171,7 @@ def test_search_does_not_call_parser_during_search(tmp_path, monkeypatch) -> Non
             raise AssertionError("Parser should not run during JD search.")
 
     monkeypatch.setattr(
-        resume_batch_processor,
+        local_resume_batch_processor,
         "_candidate_profile_service",
         ParserThatShouldNotRun(),
     )
@@ -225,6 +229,11 @@ def test_search_does_not_trigger_batch_processor(monkeypatch) -> None:
     monkeypatch.setattr(
         batch_processing_service,
         "run_local_drive_batch",
+        fail_if_called,
+    )
+    monkeypatch.setattr(
+        batch_processing_service,
+        "run_batch",
         fail_if_called,
     )
     client = TestClient(create_app())

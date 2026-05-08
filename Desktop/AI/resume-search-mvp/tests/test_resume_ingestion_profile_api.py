@@ -2,7 +2,7 @@ import json
 
 from fastapi.testclient import TestClient
 
-from app.container import resume_batch_processor, resume_repository
+from app.container import local_resume_batch_processor, resume_repository
 from app.main import create_app
 from app.parsing.rule_based import RuleBasedResumeParserProvider
 from app.services.candidate_profile_service import CandidateProfileService
@@ -46,7 +46,7 @@ class FakeOllamaClient:
 def test_ingest_txt_resume_and_list_parsed_candidate_profile(tmp_path, monkeypatch) -> None:
     resume_repository.clear()
     monkeypatch.setattr(
-        resume_batch_processor,
+        local_resume_batch_processor,
         "_storage_provider",
         LocalFolderResumeStorageProvider(tmp_path),
     )
@@ -80,12 +80,12 @@ def test_ingest_local_drive_force_query_reprocesses_existing_resume(
 ) -> None:
     resume_repository.clear()
     monkeypatch.setattr(
-        resume_batch_processor,
+        local_resume_batch_processor,
         "_storage_provider",
         LocalFolderResumeStorageProvider(tmp_path),
     )
     monkeypatch.setattr(
-        resume_batch_processor,
+        local_resume_batch_processor,
         "_candidate_profile_service",
         CandidateProfileService(
             primary_parser=RuleBasedResumeParserProvider(),

@@ -14,13 +14,28 @@ class ResumeBatchProcessingService:
         self,
         batch_processor: ResumeBatchProcessor,
         batch_run_repository: BatchRunRepository,
+        local_batch_processor: ResumeBatchProcessor | None = None,
     ) -> None:
         self._batch_processor = batch_processor
+        self._local_batch_processor = local_batch_processor or batch_processor
         self._batch_run_repository = batch_run_repository
         self._lock = Lock()
 
+    def run_batch(
+        self,
+        force: bool = False,
+    ) -> tuple[BatchRunRecord, LocalDriveIngestionResponse]:
+        return self._run_processor(self._batch_processor, force=force)
+
     def run_local_drive_batch(
         self,
+        force: bool = False,
+    ) -> tuple[BatchRunRecord, LocalDriveIngestionResponse]:
+        return self._run_processor(self._local_batch_processor, force=force)
+
+    def _run_processor(
+        self,
+        processor: ResumeBatchProcessor,
         force: bool = False,
     ) -> tuple[BatchRunRecord, LocalDriveIngestionResponse]:
         if not self._lock.acquire(blocking=False):
@@ -28,7 +43,7 @@ class ResumeBatchProcessingService:
 
         batch_run = self._batch_run_repository.create_running()
         try:
-            summary = self._batch_processor.process_local_drive(force=force)
+            summary = processor.process_local_drive(force=force)
             completed_run = self._batch_run_repository.mark_completed(
                 batch_id=batch_run.batch_id,
                 summary=summary,
@@ -63,4 +78,4 @@ class ResumeBatchProcessingService:
 def run_nightly_resume_batch(
     batch_processing_service: ResumeBatchProcessingService,
 ) -> tuple[BatchRunRecord, LocalDriveIngestionResponse]:
-    return batch_processing_service.run_local_drive_batch(force=False)
+    return batch_processing_service.run_batch(force=False)

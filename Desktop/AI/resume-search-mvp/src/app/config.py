@@ -44,6 +44,20 @@ class Settings(BaseSettings):
         "local",
         validation_alias="RESUME_STORAGE_PROVIDER",
     )
+    google_drive_folder_id: str = Field(
+        "",
+        validation_alias="GOOGLE_DRIVE_FOLDER_ID",
+    )
+    google_service_account_file: str = Field(
+        "",
+        validation_alias="GOOGLE_SERVICE_ACCOUNT_FILE",
+    )
+    google_drive_allowed_mime_types: str = Field(
+        "application/pdf,"
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document,"
+        "text/plain",
+        validation_alias="GOOGLE_DRIVE_ALLOWED_MIME_TYPES",
+    )
     skill_catalog: str = Field(
         "Python,FastAPI,Docker,LLM,LangChain,SQL,PostgreSQL,AWS,Azure,GCP,"
         "Machine Learning,Data Engineering,JavaScript,TypeScript,React",

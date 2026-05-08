@@ -15,6 +15,8 @@ env/
 .env
 .env.*
 !.env.example
+*service-account*.json
+google-service-account*.json
 
 data/drive_resumes/*
 !data/drive_resumes/.gitkeep

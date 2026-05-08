@@ -68,10 +68,16 @@ curl.exe -X POST "http://127.0.0.1:8000/resumes/ingest-local-drive"
 
 This endpoint uses the same batch-processing flow intended for a future nightly job. It scans the folder, skips unchanged files by file hash, reprocesses changed files, extracts text, parses candidate profiles, and stores results in SQLite.
 
-You can also trigger the same batch process through the batch endpoint:
+You can also trigger the same local batch process through the batch endpoint:
 
 ```powershell
 curl.exe -X POST "http://127.0.0.1:8000/batch/run-local-drive"
+```
+
+To run the batch process with whichever storage provider is configured:
+
+```powershell
+curl.exe -X POST "http://127.0.0.1:8000/batch/run"
 ```
 
 View recent batch runs:
@@ -110,6 +116,9 @@ NIGHTLY_BATCH_HOUR=2
 NIGHTLY_BATCH_MINUTE=0
 RESUME_STORAGE_PROVIDER=local
 LOCAL_DRIVE_RESUME_DIR=data/drive_resumes
+GOOGLE_DRIVE_FOLDER_ID=
+GOOGLE_SERVICE_ACCOUNT_FILE=
+GOOGLE_DRIVE_ALLOWED_MIME_TYPES=application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain
 ```
 
 The SQLite database tables are created automatically when the API starts. The database file lives under `data/` and is ignored by git.
@@ -118,7 +127,7 @@ Nightly batch scheduling is currently a foundation hook only. `ENABLE_NIGHTLY_BA
 
 ## Storage Providers
 
-Resume batch processing reads files through a storage provider interface. The current provider is `local`, which scans the local simulator folder:
+Resume batch processing reads files through a storage provider interface. The default provider is `local`, which scans the local simulator folder:
 
 ```text
 data/drive_resumes/
@@ -131,7 +140,27 @@ RESUME_STORAGE_PROVIDER=local
 LOCAL_DRIVE_RESUME_DIR=data/drive_resumes
 ```
 
-A `GoogleDriveResumeStorageProvider` placeholder exists for a future step. It will eventually authenticate with Google Drive, list files from a configured Drive folder, download bytes, and provide file metadata. Real Google Drive integration is not implemented yet.
+A `GoogleDriveResumeStorageProvider` is available for the first Google Drive ingestion foundation. It authenticates with a service account, lists supported resume files from a configured folder, downloads bytes, and provides metadata through the shared storage interface.
+
+### Google Drive Setup
+
+Google Drive support is available behind the same storage provider interface, but local remains the default for development.
+
+To switch batch ingestion to Google Drive, set:
+
+```text
+RESUME_STORAGE_PROVIDER=google_drive
+GOOGLE_DRIVE_FOLDER_ID=your-google-drive-folder-id
+GOOGLE_SERVICE_ACCOUNT_FILE=C:\path\to\service-account.json
+```
+
+The Google provider uses a service account with read-only Drive access. Share the target Drive folder with the service account email, then run:
+
+```powershell
+curl.exe -X POST "http://127.0.0.1:8000/batch/run"
+```
+
+`POST /batch/run-local-drive` still forces the local simulator provider. Service account JSON files should never be committed; `.gitignore` excludes common service-account filename patterns.
 
 To use the fallback parser as the primary parser during development:
 
