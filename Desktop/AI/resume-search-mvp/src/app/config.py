@@ -30,6 +30,16 @@ class Settings(BaseSettings):
         "sqlite:///./data/resume_search.db",
         validation_alias="DATABASE_URL",
     )
+    enable_nightly_batch: bool = Field(
+        False,
+        validation_alias="ENABLE_NIGHTLY_BATCH",
+    )
+    nightly_batch_hour: int = Field(2, validation_alias="NIGHTLY_BATCH_HOUR")
+    nightly_batch_minute: int = Field(0, validation_alias="NIGHTLY_BATCH_MINUTE")
+    local_drive_resume_dir: str = Field(
+        "data/drive_resumes",
+        validation_alias="LOCAL_DRIVE_RESUME_DIR",
+    )
     skill_catalog: str = Field(
         "Python,FastAPI,Docker,LLM,LangChain,SQL,PostgreSQL,AWS,Azure,GCP,"
         "Machine Learning,Data Engineering,JavaScript,TypeScript,React",

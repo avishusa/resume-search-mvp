@@ -1,7 +1,9 @@
 from app.config import get_settings
 from app.parsing.ollama import OllamaResumeParserProvider
 from app.parsing.rule_based import RuleBasedResumeParserProvider
+from app.repositories.batch_run_repository import BatchRunRepository
 from app.repositories.sqlalchemy_resume_repository import SQLAlchemyResumeRepository
+from app.services.batch_processing_service import ResumeBatchProcessingService
 from app.services.candidate_profile_service import CandidateProfileService
 from app.services.debug_service import DebugService
 from app.services.resume_batch_processor import ResumeBatchProcessor
@@ -9,8 +11,11 @@ from app.services.resume_ingestion_service import ResumeIngestionService
 from app.services.resume_search_service import ResumeSearchService
 from app.services.resume_service import ResumeUploadService
 
+from pathlib import Path
+
 settings = get_settings()
 resume_repository = SQLAlchemyResumeRepository()
+batch_run_repository = BatchRunRepository()
 
 skill_catalog = [
     skill.strip()
@@ -46,6 +51,11 @@ resume_ingestion_service = ResumeIngestionService(
 resume_batch_processor = ResumeBatchProcessor(
     repository=resume_repository,
     candidate_profile_service=candidate_profile_service,
+    local_drive_folder=Path(settings.local_drive_resume_dir),
+)
+batch_processing_service = ResumeBatchProcessingService(
+    batch_processor=resume_batch_processor,
+    batch_run_repository=batch_run_repository,
 )
 resume_upload_service = ResumeUploadService(ingestion_service=resume_ingestion_service)
 resume_search_service = ResumeSearchService(repository=resume_repository)

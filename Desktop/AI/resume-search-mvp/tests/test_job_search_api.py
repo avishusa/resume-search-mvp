@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 from datetime import UTC, datetime
 
-from app.container import resume_batch_processor, resume_repository
+from app.container import batch_processing_service, resume_batch_processor, resume_repository
 from app.main import create_app
 from app.parsing.rule_based import RuleBasedResumeParserProvider
 from app.repositories.resume_repository import ResumeRecord
@@ -200,3 +200,32 @@ def test_search_filters_by_min_years_experience_with_seeded_profiles() -> None:
     assert body["matched_count"] == 1
     assert [result["file_name"] for result in body["results"]] == ["senior.txt"]
     assert "Experience requirement met: 6 years >= 5 years" in body["results"][0]["match_reason"]
+
+
+def test_search_does_not_trigger_batch_processor(monkeypatch) -> None:
+    resume_repository.clear()
+    resume_repository.save(_parsed_record("senior", "senior.txt", 6))
+
+    def fail_if_called(force: bool = False):
+        raise AssertionError("Search must not trigger batch processing.")
+
+    monkeypatch.setattr(
+        batch_processing_service,
+        "run_local_drive_batch",
+        fail_if_called,
+    )
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/jobs/search",
+        json={
+            "job_title": "AI Engineer",
+            "job_description": "AI role",
+            "required_skills": ["Python"],
+            "nice_to_have_skills": [],
+            "min_years_experience": 5,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["matched_count"] == 1

@@ -37,6 +37,7 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
 def init_db() -> None:
+    from app.models import batch_run  # noqa: F401
     from app.models import resume  # noqa: F401
 
     Base.metadata.create_all(bind=engine)

@@ -1,12 +1,13 @@
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 
-from app.container import resume_batch_processor, resume_repository, resume_upload_service
+from app.container import batch_processing_service, resume_repository, resume_upload_service
 from app.schemas.resume import (
     LocalDriveIngestionResponse,
     ResumeListItem,
     ResumeUploadResponse,
 )
 from app.services.resume_ingestion_service import UnsupportedResumeFileTypeError
+from app.services.batch_processing_service import BatchAlreadyRunningError
 
 router = APIRouter(prefix="/resumes", tags=["resumes"])
 
@@ -30,7 +31,14 @@ async def upload_resume(file: UploadFile = File(...)) -> ResumeUploadResponse:
 
 @router.post("/ingest-local-drive", response_model=LocalDriveIngestionResponse)
 def ingest_local_drive(force: bool = False) -> LocalDriveIngestionResponse:
-    return resume_batch_processor.process_local_drive(force=force)
+    try:
+        _batch_run, summary = batch_processing_service.run_local_drive_batch(force=force)
+    except BatchAlreadyRunningError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(error),
+        ) from error
+    return summary
 
 
 @router.get("", response_model=list[ResumeListItem])
