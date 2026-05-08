@@ -38,6 +38,22 @@ class FakeOllamaClient:
         return self._response
 
 
+class SequentialFakeOllamaClient:
+    def __init__(self, responses: list[FakeOllamaResponse], payloads: list[dict]) -> None:
+        self._responses = responses
+        self._payloads = payloads
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        return None
+
+    def post(self, url: str, json: dict) -> FakeOllamaResponse:
+        self._payloads.append(json)
+        return self._responses.pop(0)
+
+
 def _service_with_fake_ollama(monkeypatch, response: FakeOllamaResponse) -> CandidateProfileService:
     monkeypatch.setattr(
         "app.parsing.ollama.httpx.Client",
@@ -257,3 +273,87 @@ def test_ollama_error_triggers_rule_based_fallback(monkeypatch) -> None:
 
     assert profile.parser_used == "rule_based"
     assert profile.email == "jane@example.com"
+
+
+def _http_500_error(message: str = "model overloaded") -> httpx.HTTPStatusError:
+    request = httpx.Request("POST", "http://localhost:11434/api/generate")
+    response = httpx.Response(500, text=message, request=request)
+    return httpx.HTTPStatusError(
+        "Server error '500 Internal Server Error'",
+        request=request,
+        response=response,
+    )
+
+
+def test_ollama_500_retries_once_with_shorter_text_and_returns_ollama(monkeypatch) -> None:
+    payloads: list[dict] = []
+    responses = [
+        FakeOllamaResponse(error=_http_500_error("too much input")),
+        FakeOllamaResponse(
+            {
+                "response": json.dumps(
+                    {
+                        "candidate_name": "Bhavesh Wadhwani",
+                        "email": "bhavesh@example.com",
+                        "phone": None,
+                        "current_title": "Data Scientist",
+                        "skills": ["Python"],
+                        "total_experience_years": 4.5,
+                        "companies": [],
+                        "education": [],
+                        "resume_summary": "Data Scientist with Python.",
+                        "confidence_score": 0.86,
+                    }
+                )
+            }
+        ),
+    ]
+    monkeypatch.setattr(
+        "app.parsing.ollama.httpx.Client",
+        lambda timeout: SequentialFakeOllamaClient(responses, payloads),
+    )
+    provider = OllamaResumeParserProvider(
+        base_url="http://localhost:11434",
+        model="llama3.1:8b",
+        timeout_seconds=1,
+        max_resume_chars=12000,
+    )
+
+    profile = provider.parse("Bhavesh Wadhwani\nData Scientist\nPython\n" + ("x" * 9000))
+
+    assert profile.parser_used == "ollama"
+    assert profile.candidate_name == "Bhavesh Wadhwani"
+    assert len(payloads) == 2
+    assert len(payloads[1]["prompt"]) < len(payloads[0]["prompt"])
+
+
+def test_ollama_500_retry_failure_falls_back_and_records_both_errors(monkeypatch) -> None:
+    payloads: list[dict] = []
+    responses = [
+        FakeOllamaResponse(error=_http_500_error("first failure")),
+        FakeOllamaResponse(error=_http_500_error("retry failure")),
+    ]
+    monkeypatch.setattr(
+        "app.parsing.ollama.httpx.Client",
+        lambda timeout: SequentialFakeOllamaClient(responses, payloads),
+    )
+    service = CandidateProfileService(
+        primary_parser=OllamaResumeParserProvider(
+            base_url="http://localhost:11434",
+            model="llama3.1:8b",
+            timeout_seconds=1,
+            max_resume_chars=12000,
+        ),
+        fallback_parser=RuleBasedResumeParserProvider(skill_catalog=["Python"]),
+    )
+
+    result = service.parse_with_metadata(
+        "Bhavesh Wadhwani\nData Scientist\nbhavesh@example.com\nPython\n" + ("x" * 9000)
+    )
+
+    assert result.profile.parser_used == "rule_based"
+    assert result.ollama_error is not None
+    assert "first failure" in result.ollama_error
+    assert "retry failure" in result.ollama_error
+    assert "cleaned_text_chars" in result.ollama_error
+    assert result.ollama_raw_response_preview == "retry failure"

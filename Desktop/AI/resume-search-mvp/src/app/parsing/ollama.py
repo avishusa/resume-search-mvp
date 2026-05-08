@@ -4,7 +4,11 @@ import httpx
 from pydantic import ValidationError
 
 from app.parsing.base import ResumeParserError
+from app.parsing.text_cleaning import clean_resume_text_for_llm
 from app.schemas.candidate import CandidateProfile
+
+
+OLLAMA_RETRY_MAX_RESUME_CHARS = 4000
 
 
 class OllamaResumeParserProvider:
@@ -23,31 +27,20 @@ class OllamaResumeParserProvider:
         self._max_resume_chars = max_resume_chars
         self.last_raw_response_preview: str | None = None
         self.last_ollama_model: str = model
+        self.last_cleaned_text_length: int | None = None
+        self.last_prompt_text_length: int | None = None
 
     def parse(self, resume_text: str) -> CandidateProfile:
         self.last_raw_response_preview = None
+        self.last_cleaned_text_length = None
+        self.last_prompt_text_length = None
+        cleaned_resume_text = clean_resume_text_for_llm(resume_text)
+        self.last_cleaned_text_length = len(cleaned_resume_text)
         try:
-            truncated_resume_text = resume_text[: self._max_resume_chars]
-            with httpx.Client(timeout=self._timeout_seconds) as client:
-                response = client.post(
-                    f"{self._base_url}/api/generate",
-                    json={
-                        "model": self._model,
-                        "prompt": self._build_prompt(truncated_resume_text),
-                        "stream": False,
-                        "format": "json",
-                    },
-                )
-                response.raise_for_status()
-
-            response_body = response.json()
-            raw_profile_json = response_body.get("response")
-            if not isinstance(raw_profile_json, str):
-                raise ResumeParserError(
-                    "Ollama response did not include JSON text.",
-                    ollama_model=self._model,
-                )
-
+            raw_profile_json = self._generate_profile_json(
+                cleaned_resume_text=cleaned_resume_text,
+                max_resume_chars=self._max_resume_chars,
+            )
             self.last_raw_response_preview = raw_profile_json[:500]
 
             profile_data = json.loads(raw_profile_json)
@@ -56,6 +49,8 @@ class OllamaResumeParserProvider:
                     "Ollama response JSON must be an object.",
                     raw_response_preview=self.last_raw_response_preview,
                     ollama_model=self._model,
+                    cleaned_text_length=self.last_cleaned_text_length,
+                    prompt_text_length=self.last_prompt_text_length,
                 )
 
             profile_data = self._normalize_profile_data(profile_data)
@@ -68,11 +63,122 @@ class OllamaResumeParserProvider:
                 "raw_response_preview",
                 self.last_raw_response_preview,
             )
+            cleaned_text_length = getattr(
+                error,
+                "cleaned_text_length",
+                self.last_cleaned_text_length,
+            )
+            prompt_text_length = getattr(
+                error,
+                "prompt_text_length",
+                self.last_prompt_text_length,
+            )
             raise ResumeParserError(
                 f"Ollama resume parsing failed: {error}",
                 raw_response_preview=raw_response_preview,
                 ollama_model=self._model,
+                cleaned_text_length=cleaned_text_length,
+                prompt_text_length=prompt_text_length,
             ) from error
+
+    def _generate_profile_json(
+        self,
+        cleaned_resume_text: str,
+        max_resume_chars: int,
+    ) -> str:
+        try:
+            return self._request_profile_json(cleaned_resume_text, max_resume_chars)
+        except ResumeParserError as first_error:
+            if not self._should_retry_with_shorter_text(first_error, max_resume_chars):
+                raise
+
+            try:
+                return self._request_profile_json(
+                    cleaned_resume_text,
+                    min(OLLAMA_RETRY_MAX_RESUME_CHARS, max_resume_chars),
+                )
+            except ResumeParserError as retry_error:
+                retry_error.args = (
+                    f"{first_error}; retry_error={retry_error}",
+                )
+                raise retry_error from first_error
+
+    def _request_profile_json(
+        self,
+        cleaned_resume_text: str,
+        max_resume_chars: int,
+    ) -> str:
+        truncated_resume_text = cleaned_resume_text[:max_resume_chars]
+        prompt = self._build_prompt(truncated_resume_text)
+        self.last_prompt_text_length = len(prompt)
+
+        try:
+            with httpx.Client(timeout=self._timeout_seconds) as client:
+                response = client.post(
+                    f"{self._base_url}/api/generate",
+                    json={
+                        "model": self._model,
+                        "prompt": prompt,
+                        "stream": False,
+                        "format": "json",
+                    },
+                )
+                response.raise_for_status()
+        except httpx.HTTPStatusError as error:
+            response_preview = error.response.text[:500] if error.response else None
+            self.last_raw_response_preview = response_preview
+            raise ResumeParserError(
+                self._build_http_error_message(
+                    error=error,
+                    cleaned_text_length=len(cleaned_resume_text),
+                    prompt_text_length=len(prompt),
+                    input_text_length=len(truncated_resume_text),
+                    max_resume_chars=max_resume_chars,
+                    response_preview=response_preview,
+                ),
+                raw_response_preview=response_preview,
+                ollama_model=self._model,
+                cleaned_text_length=len(cleaned_resume_text),
+                prompt_text_length=len(prompt),
+            ) from error
+
+        response_body = response.json()
+        raw_profile_json = response_body.get("response")
+        if not isinstance(raw_profile_json, str):
+            raise ResumeParserError(
+                "Ollama response did not include JSON text.",
+                ollama_model=self._model,
+                cleaned_text_length=len(cleaned_resume_text),
+                prompt_text_length=len(prompt),
+            )
+        return raw_profile_json
+
+    def _should_retry_with_shorter_text(
+        self,
+        error: ResumeParserError,
+        max_resume_chars: int,
+    ) -> bool:
+        return "HTTP 500" in str(error) and max_resume_chars > OLLAMA_RETRY_MAX_RESUME_CHARS
+
+    def _build_http_error_message(
+        self,
+        error: httpx.HTTPStatusError,
+        cleaned_text_length: int,
+        prompt_text_length: int,
+        input_text_length: int,
+        max_resume_chars: int,
+        response_preview: str | None,
+    ) -> str:
+        response = error.response
+        return (
+            f"Ollama HTTP {response.status_code} error; "
+            f"model={self._model}; "
+            f"cleaned_text_chars={cleaned_text_length}; "
+            f"prompt_chars={prompt_text_length}; "
+            f"input_chars={input_text_length}; "
+            f"max_resume_chars={max_resume_chars}; "
+            f"response_preview={response_preview or ''}"
+        )
 
     def _normalize_profile_data(self, profile_data: dict) -> dict:
         normalized_data = dict(profile_data)

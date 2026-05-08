@@ -168,6 +168,59 @@ To use the fallback parser as the primary parser during development:
 $env:RESUME_PARSER_PROVIDER="rule_based"
 ```
 
+## Frontend
+
+The recruiter frontend lives in:
+
+```text
+frontend/
+```
+
+It provides JD search and a simple resume status view. It does not include resume upload because resumes are processed through the batch/storage provider flow.
+
+Install frontend dependencies:
+
+```powershell
+cd frontend
+npm install
+```
+
+Create local frontend config:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Default frontend API config:
+
+```text
+VITE_API_BASE_URL=http://127.0.0.1:8000
+```
+
+Run the backend from the project root:
+
+```powershell
+uvicorn app.main:app --reload
+```
+
+Run the frontend from `frontend/`:
+
+```powershell
+npm run dev
+```
+
+Open:
+
+```text
+http://localhost:5173
+```
+
+Run frontend tests:
+
+```powershell
+npm test
+```
+
 ## Tests
 
 Run the test suite:

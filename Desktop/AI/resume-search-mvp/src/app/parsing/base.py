@@ -9,10 +9,14 @@ class ResumeParserError(Exception):
         message: str,
         raw_response_preview: str | None = None,
         ollama_model: str | None = None,
+        cleaned_text_length: int | None = None,
+        prompt_text_length: int | None = None,
     ) -> None:
         super().__init__(message)
         self.raw_response_preview = raw_response_preview
         self.ollama_model = ollama_model
+        self.cleaned_text_length = cleaned_text_length
+        self.prompt_text_length = prompt_text_length
 
 
 class ResumeParserProvider(Protocol):

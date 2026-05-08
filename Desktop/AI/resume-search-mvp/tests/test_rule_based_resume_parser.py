@@ -26,3 +26,30 @@ def test_rule_based_parser_marks_review_required_when_important_fields_missing()
 
     assert profile.parser_used == "rule_based"
     assert profile.parsing_status == "review_required"
+
+
+def test_rule_based_parser_extracts_bhavesh_style_resume_with_pdf_symbols() -> None:
+    parser = RuleBasedResumeParserProvider(
+        skill_catalog=["Python", "SQL", "MS-SQL", "Machine Learning", "GCP", "Docker"]
+    )
+
+    profile = parser.parse(
+        "Bhavesh Wadhwani\n"
+        "DATA SCIENTIST · GOOGLE CLOUD CERTIFIED · MICROSOFT CERTIFIED\n"
+        " +1 312-555-1212   bhavesh@example.com   Chicago\n"
+        "4.5+ years of work experience\n"
+        "Skills: Python, SQL/MS-SQL, Machine Learning, GCP, Docker\n"
+        "￾"
+    )
+
+    assert profile.parser_used == "rule_based"
+    assert profile.parsing_status == "parsed"
+    assert profile.candidate_name == "Bhavesh Wadhwani"
+    assert profile.current_title == "Data Scientist"
+    assert profile.email == "bhavesh@example.com"
+    assert profile.phone == "+1 312-555-1212"
+    assert profile.total_experience_years == 4.5
+    assert "Python" in profile.skills
+    assert "Machine Learning" in profile.skills
+    assert "GCP" in profile.skills
+    assert "Docker" in profile.skills
