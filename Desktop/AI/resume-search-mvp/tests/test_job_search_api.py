@@ -7,6 +7,7 @@ from app.parsing.rule_based import RuleBasedResumeParserProvider
 from app.repositories.resume_repository import ResumeRecord
 from app.schemas.candidate import CandidateProfile
 from app.services.candidate_profile_service import CandidateProfileService
+from app.storage.local_folder import LocalFolderResumeStorageProvider
 
 
 def _parsed_record(
@@ -51,7 +52,11 @@ def _parsed_record(
 
 def test_search_jd_returns_only_strict_title_matched_resumes(tmp_path, monkeypatch) -> None:
     resume_repository.clear()
-    monkeypatch.setattr(resume_batch_processor, "_local_drive_folder", tmp_path)
+    monkeypatch.setattr(
+        resume_batch_processor,
+        "_storage_provider",
+        LocalFolderResumeStorageProvider(tmp_path),
+    )
     monkeypatch.setattr(
         resume_batch_processor,
         "_candidate_profile_service",
@@ -96,7 +101,11 @@ def test_search_jd_returns_only_strict_title_matched_resumes(tmp_path, monkeypat
 
 def test_search_ranks_candidates_with_more_required_skills_higher(tmp_path, monkeypatch) -> None:
     resume_repository.clear()
-    monkeypatch.setattr(resume_batch_processor, "_local_drive_folder", tmp_path)
+    monkeypatch.setattr(
+        resume_batch_processor,
+        "_storage_provider",
+        LocalFolderResumeStorageProvider(tmp_path),
+    )
     monkeypatch.setattr(
         resume_batch_processor,
         "_candidate_profile_service",
@@ -136,7 +145,11 @@ def test_search_ranks_candidates_with_more_required_skills_higher(tmp_path, monk
 
 def test_search_does_not_call_parser_during_search(tmp_path, monkeypatch) -> None:
     resume_repository.clear()
-    monkeypatch.setattr(resume_batch_processor, "_local_drive_folder", tmp_path)
+    monkeypatch.setattr(
+        resume_batch_processor,
+        "_storage_provider",
+        LocalFolderResumeStorageProvider(tmp_path),
+    )
     monkeypatch.setattr(
         resume_batch_processor,
         "_candidate_profile_service",

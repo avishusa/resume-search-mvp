@@ -1,0 +1,1 @@
+"""Resume storage provider implementations."""

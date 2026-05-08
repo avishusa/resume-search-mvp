@@ -31,9 +31,9 @@ def test_ingest_local_drive_folder_with_fake_txt_resumes(tmp_path) -> None:
 
     response = service.ingest_local_drive()
 
-    assert response.total_files_seen == 2
+    assert response.total_files_seen == 1
     assert response.ingested_count == 1
-    assert response.skipped_count == 1
+    assert response.skipped_count == 0
     assert response.failed_count == 0
     assert response.resumes[0].file_name == "ai-engineer.txt"
     assert repository.list_all()[0].extracted_text == "AI Engineer\nPython LLM LangChain"

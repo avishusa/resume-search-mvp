@@ -4,12 +4,17 @@ from app.container import batch_run_repository, resume_batch_processor, resume_r
 from app.main import create_app
 from app.parsing.rule_based import RuleBasedResumeParserProvider
 from app.services.candidate_profile_service import CandidateProfileService
+from app.storage.local_folder import LocalFolderResumeStorageProvider
 
 
 def test_batch_run_local_drive_endpoint_records_run(tmp_path, monkeypatch) -> None:
     resume_repository.clear()
     batch_run_repository.clear()
-    monkeypatch.setattr(resume_batch_processor, "_local_drive_folder", tmp_path)
+    monkeypatch.setattr(
+        resume_batch_processor,
+        "_storage_provider",
+        LocalFolderResumeStorageProvider(tmp_path),
+    )
     monkeypatch.setattr(
         resume_batch_processor,
         "_candidate_profile_service",

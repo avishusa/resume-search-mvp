@@ -40,6 +40,10 @@ class Settings(BaseSettings):
         "data/drive_resumes",
         validation_alias="LOCAL_DRIVE_RESUME_DIR",
     )
+    resume_storage_provider: str = Field(
+        "local",
+        validation_alias="RESUME_STORAGE_PROVIDER",
+    )
     skill_catalog: str = Field(
         "Python,FastAPI,Docker,LLM,LangChain,SQL,PostgreSQL,AWS,Azure,GCP,"
         "Machine Learning,Data Engineering,JavaScript,TypeScript,React",

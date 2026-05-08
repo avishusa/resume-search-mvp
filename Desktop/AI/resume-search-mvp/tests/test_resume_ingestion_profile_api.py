@@ -6,6 +6,7 @@ from app.container import resume_batch_processor, resume_repository
 from app.main import create_app
 from app.parsing.rule_based import RuleBasedResumeParserProvider
 from app.services.candidate_profile_service import CandidateProfileService
+from app.storage.local_folder import LocalFolderResumeStorageProvider
 
 
 class FakeOllamaResponse:
@@ -44,7 +45,11 @@ class FakeOllamaClient:
 
 def test_ingest_txt_resume_and_list_parsed_candidate_profile(tmp_path, monkeypatch) -> None:
     resume_repository.clear()
-    monkeypatch.setattr(resume_batch_processor, "_local_drive_folder", tmp_path)
+    monkeypatch.setattr(
+        resume_batch_processor,
+        "_storage_provider",
+        LocalFolderResumeStorageProvider(tmp_path),
+    )
     monkeypatch.setattr(
         "app.parsing.ollama.httpx.Client",
         lambda timeout: FakeOllamaClient(),
@@ -74,7 +79,11 @@ def test_ingest_local_drive_force_query_reprocesses_existing_resume(
     monkeypatch,
 ) -> None:
     resume_repository.clear()
-    monkeypatch.setattr(resume_batch_processor, "_local_drive_folder", tmp_path)
+    monkeypatch.setattr(
+        resume_batch_processor,
+        "_storage_provider",
+        LocalFolderResumeStorageProvider(tmp_path),
+    )
     monkeypatch.setattr(
         resume_batch_processor,
         "_candidate_profile_service",

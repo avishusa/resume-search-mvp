@@ -16,6 +16,7 @@ from app.services.batch_processing_service import (
 )
 from app.services.candidate_profile_service import CandidateProfileService
 from app.services.resume_batch_processor import ResumeBatchProcessor
+from app.storage.local_folder import LocalFolderResumeStorageProvider
 
 
 class FakeBatchProcessor:
@@ -86,7 +87,7 @@ def test_batch_service_skips_unchanged_file(tmp_path) -> None:
     processor = ResumeBatchProcessor(
         repository=resume_repository,
         candidate_profile_service=_profile_service(),
-        local_drive_folder=drive_folder,
+        storage_provider=LocalFolderResumeStorageProvider(drive_folder),
     )
     service = ResumeBatchProcessingService(processor, batch_run_repository)
 
@@ -106,7 +107,7 @@ def test_batch_service_updates_changed_file(tmp_path) -> None:
     processor = ResumeBatchProcessor(
         repository=resume_repository,
         candidate_profile_service=_profile_service(),
-        local_drive_folder=drive_folder,
+        storage_provider=LocalFolderResumeStorageProvider(drive_folder),
     )
     service = ResumeBatchProcessingService(processor, batch_run_repository)
 
@@ -127,7 +128,7 @@ def test_batch_service_failed_file_increments_failed_count(tmp_path) -> None:
     processor = ResumeBatchProcessor(
         repository=resume_repository,
         candidate_profile_service=_profile_service(),
-        local_drive_folder=drive_folder,
+        storage_provider=LocalFolderResumeStorageProvider(drive_folder),
     )
     service = ResumeBatchProcessingService(processor, batch_run_repository)
 

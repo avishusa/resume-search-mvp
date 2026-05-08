@@ -10,12 +10,25 @@ from app.services.resume_batch_processor import ResumeBatchProcessor
 from app.services.resume_ingestion_service import ResumeIngestionService
 from app.services.resume_search_service import ResumeSearchService
 from app.services.resume_service import ResumeUploadService
+from app.storage.google_drive import GoogleDriveResumeStorageProvider
+from app.storage.local_folder import LocalFolderResumeStorageProvider
 
 from pathlib import Path
 
 settings = get_settings()
 resume_repository = SQLAlchemyResumeRepository()
 batch_run_repository = BatchRunRepository()
+
+if settings.resume_storage_provider == "local":
+    resume_storage_provider = LocalFolderResumeStorageProvider(
+        Path(settings.local_drive_resume_dir)
+    )
+elif settings.resume_storage_provider == "google_drive":
+    resume_storage_provider = GoogleDriveResumeStorageProvider()
+else:
+    raise ValueError(
+        f"Unsupported RESUME_STORAGE_PROVIDER: {settings.resume_storage_provider}"
+    )
 
 skill_catalog = [
     skill.strip()
@@ -51,7 +64,7 @@ resume_ingestion_service = ResumeIngestionService(
 resume_batch_processor = ResumeBatchProcessor(
     repository=resume_repository,
     candidate_profile_service=candidate_profile_service,
-    local_drive_folder=Path(settings.local_drive_resume_dir),
+    storage_provider=resume_storage_provider,
 )
 batch_processing_service = ResumeBatchProcessingService(
     batch_processor=resume_batch_processor,

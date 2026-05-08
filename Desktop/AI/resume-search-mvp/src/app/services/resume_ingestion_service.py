@@ -12,6 +12,7 @@ from app.repositories.resume_repository import InMemoryResumeRepository, ResumeR
 from app.schemas.resume import LocalDriveIngestionResponse, ResumeIngestionItem
 from app.services.candidate_profile_service import CandidateProfileService
 from app.services.resume_batch_processor import ResumeBatchProcessor
+from app.storage.local_folder import LocalFolderResumeStorageProvider
 
 
 class UnsupportedResumeFileTypeError(ValueError):
@@ -80,7 +81,7 @@ class ResumeIngestionService:
         return ResumeBatchProcessor(
             repository=self._repository,
             candidate_profile_service=self._candidate_profile_service,
-            local_drive_folder=self._local_drive_folder,
+            storage_provider=LocalFolderResumeStorageProvider(self._local_drive_folder),
             extractors=self._extractors,
         ).process_local_drive(force=force)
 

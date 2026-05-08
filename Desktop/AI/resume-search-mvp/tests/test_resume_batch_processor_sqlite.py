@@ -8,6 +8,7 @@ from app.parsing.rule_based import RuleBasedResumeParserProvider
 from app.repositories.sqlalchemy_resume_repository import SQLAlchemyResumeRepository
 from app.services.candidate_profile_service import CandidateProfileService
 from app.services.resume_batch_processor import ResumeBatchProcessor
+from app.storage.local_folder import LocalFolderResumeStorageProvider
 
 
 def _repository(tmp_path: Path) -> SQLAlchemyResumeRepository:
@@ -33,7 +34,7 @@ def test_same_file_hash_is_skipped_on_second_sqlite_ingestion(tmp_path) -> None:
     processor = ResumeBatchProcessor(
         repository=repository,
         candidate_profile_service=_profile_service(),
-        local_drive_folder=drive_folder,
+        storage_provider=LocalFolderResumeStorageProvider(drive_folder),
     )
 
     first_response = processor.process_local_drive()
@@ -53,7 +54,7 @@ def test_changed_file_hash_updates_sqlite_record(tmp_path) -> None:
     processor = ResumeBatchProcessor(
         repository=repository,
         candidate_profile_service=_profile_service(),
-        local_drive_folder=drive_folder,
+        storage_provider=LocalFolderResumeStorageProvider(drive_folder),
     )
 
     processor.process_local_drive()
@@ -74,7 +75,7 @@ def test_force_reprocesses_unchanged_sqlite_record(tmp_path) -> None:
     processor = ResumeBatchProcessor(
         repository=repository,
         candidate_profile_service=_profile_service(),
-        local_drive_folder=drive_folder,
+        storage_provider=LocalFolderResumeStorageProvider(drive_folder),
     )
 
     processor.process_local_drive()

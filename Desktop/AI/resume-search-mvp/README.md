@@ -108,12 +108,30 @@ DATABASE_URL=sqlite:///./data/resume_search.db
 ENABLE_NIGHTLY_BATCH=false
 NIGHTLY_BATCH_HOUR=2
 NIGHTLY_BATCH_MINUTE=0
+RESUME_STORAGE_PROVIDER=local
 LOCAL_DRIVE_RESUME_DIR=data/drive_resumes
 ```
 
 The SQLite database tables are created automatically when the API starts. The database file lives under `data/` and is ignored by git.
 
 Nightly batch scheduling is currently a foundation hook only. `ENABLE_NIGHTLY_BATCH` is disabled by default, and Google Drive integration is not implemented yet. `data/drive_resumes/` remains the local Drive simulator for this MVP step.
+
+## Storage Providers
+
+Resume batch processing reads files through a storage provider interface. The current provider is `local`, which scans the local simulator folder:
+
+```text
+data/drive_resumes/
+```
+
+Configure it with:
+
+```text
+RESUME_STORAGE_PROVIDER=local
+LOCAL_DRIVE_RESUME_DIR=data/drive_resumes
+```
+
+A `GoogleDriveResumeStorageProvider` placeholder exists for a future step. It will eventually authenticate with Google Drive, list files from a configured Drive folder, download bytes, and provide file metadata. Real Google Drive integration is not implemented yet.
 
 To use the fallback parser as the primary parser during development:
 
