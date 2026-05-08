@@ -7,6 +7,7 @@ class JobSearchRequest(BaseModel):
     required_skills: list[str] = Field(default_factory=list)
     nice_to_have_skills: list[str] = Field(default_factory=list)
     min_years_experience: float = 0
+    debug: bool = False
 
 
 class JobSearchQuery(BaseModel):
@@ -34,6 +35,10 @@ class JobSearchResult(BaseModel):
     missing_required_skills: list[str]
     matched_nice_to_have_skills: list[str]
     match_reason: str
+    normalized_jd_title: str | None = None
+    normalized_candidate_title: str | None = None
+    title_match_type: str | None = None
+    title_match_reason: str | None = None
 
 
 class JobSearchResponse(BaseModel):

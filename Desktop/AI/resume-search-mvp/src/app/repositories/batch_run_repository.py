@@ -76,6 +76,16 @@ class BatchRunRepository:
             )
             return self._to_record(model) if model else None
 
+    def get_active_running(self) -> BatchRunRecord | None:
+        with self._session_factory() as session:
+            model = session.scalar(
+                select(BatchRunModel)
+                .where(BatchRunModel.status == "running")
+                .order_by(BatchRunModel.started_at.desc())
+                .limit(1)
+            )
+            return self._to_record(model) if model else None
+
     def list_recent(self, limit: int = 20) -> list[BatchRunRecord]:
         with self._session_factory() as session:
             models = session.scalars(
@@ -84,6 +94,22 @@ class BatchRunRepository:
                 .limit(limit)
             ).all()
             return [self._to_record(model) for model in models]
+
+    def mark_running_as_interrupted(self) -> int:
+        finished_at = datetime.now(UTC)
+        with self._session_factory() as session:
+            models = session.scalars(
+                select(BatchRunModel).where(BatchRunModel.status == "running")
+            ).all()
+            for model in models:
+                model.status = "failed"
+                model.finished_at = finished_at
+                model.error_message = (
+                    "Batch was marked failed because the application restarted "
+                    "before it completed."
+                )
+            session.commit()
+            return len(models)
 
     def clear(self) -> None:
         with self._session_factory() as session:

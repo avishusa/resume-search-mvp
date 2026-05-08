@@ -1,4 +1,32 @@
 import re
+from dataclasses import dataclass
+
+
+TITLE_ALIAS_GROUPS = [
+    {
+        "data science",
+        "data scientist",
+        "senior data scientist",
+        "data science consultant",
+        "senior consultant data science",
+    },
+    {
+        "ai engineer",
+        "artificial intelligence engineer",
+        "gen ai engineer",
+        "generative ai engineer",
+        "ai software engineer",
+    },
+    {
+        "software engineer",
+        "software developer",
+        "ai software engineer",
+    },
+    {
+        "machine learning engineer",
+        "ml engineer",
+    },
+]
 
 
 def normalize_title(title: str) -> str:
@@ -22,23 +50,81 @@ def is_ordered_subset(needle: list[str], haystack: list[str]) -> bool:
     return position == len(needle)
 
 
-class StrictTitleMatcher:
-    def score(self, job_title: str, resume_title: str | None) -> float:
-        if resume_title is None:
-            return 0
+@dataclass(frozen=True)
+class TitleMatchResult:
+    score: float
+    normalized_jd_title: str
+    normalized_candidate_title: str
+    match_type: str
+    reason: str
 
-        job_tokens = tokenize_title(job_title)
-        resume_tokens = tokenize_title(resume_title)
+
+class StrictTitleMatcher:
+    def match(self, job_title: str, resume_title: str | None) -> TitleMatchResult:
+        normalized_job_title = normalize_title(job_title)
+        normalized_resume_title = normalize_title(resume_title or "")
+        job_tokens = normalized_job_title.split()
+        resume_tokens = normalized_resume_title.split()
+
         if not job_tokens or not resume_tokens:
-            return 0
+            return TitleMatchResult(
+                score=0,
+                normalized_jd_title=normalized_job_title,
+                normalized_candidate_title=normalized_resume_title,
+                match_type="no_match",
+                reason="One or both titles are missing.",
+            )
 
         if job_tokens == resume_tokens:
-            return 1.0
+            return TitleMatchResult(
+                score=1.0,
+                normalized_jd_title=normalized_job_title,
+                normalized_candidate_title=normalized_resume_title,
+                match_type="exact",
+                reason="Normalized titles are exactly equal.",
+            )
+
+        if self._same_alias_group(normalized_job_title, normalized_resume_title):
+            return TitleMatchResult(
+                score=0.9,
+                normalized_jd_title=normalized_job_title,
+                normalized_candidate_title=normalized_resume_title,
+                match_type="alias",
+                reason="Titles are in the same controlled alias group.",
+            )
 
         if len(job_tokens) > 1 and is_ordered_subset(job_tokens, resume_tokens):
-            return 0.8
+            return TitleMatchResult(
+                score=0.8,
+                normalized_jd_title=normalized_job_title,
+                normalized_candidate_title=normalized_resume_title,
+                match_type="ordered_subset",
+                reason="JD title tokens appear in candidate title in order.",
+            )
 
-        return 0
+        return TitleMatchResult(
+            score=0,
+            normalized_jd_title=normalized_job_title,
+            normalized_candidate_title=normalized_resume_title,
+            match_type="no_match",
+            reason="No exact, alias, or ordered-subset title match.",
+        )
+
+    def score(self, job_title: str, resume_title: str | None) -> float:
+        return self.match(job_title, resume_title).score
+
+    def _same_alias_group(
+        self,
+        normalized_job_title: str,
+        normalized_resume_title: str,
+    ) -> bool:
+        for alias_group in TITLE_ALIAS_GROUPS:
+            if (
+                normalized_job_title in alias_group
+                and normalized_resume_title in alias_group
+            ):
+                return True
+        return False
 
 
 class SkillMatcher:

@@ -170,13 +170,19 @@ $env:RESUME_PARSER_PROVIDER="rule_based"
 
 ## Frontend
 
-The recruiter frontend lives in:
+The recruiter/admin frontend lives in:
 
 ```text
 frontend/
 ```
 
-It provides JD search and a simple resume status view. It does not include resume upload because resumes are processed through the batch/storage provider flow.
+It provides:
+
+- JD Search for matching already-parsed resumes
+- Resume Status for checking parsed candidate profiles
+- Batch Runs for manually triggering local batch processing and reviewing recent runs
+
+It does not include resume upload because resumes are processed through the batch/storage provider flow.
 
 Install frontend dependencies:
 
@@ -214,6 +220,13 @@ Open:
 ```text
 http://localhost:5173
 ```
+
+From the UI:
+
+- Use `Batch Runs` -> `Run Local Batch` to process files in `data/drive_resumes/`.
+- Check `Force reprocess unchanged files` when you want to re-extract and re-parse existing files.
+- Use `Resume Status` to confirm `extraction_status`, `parsing_status`, `parser_used`, and parsed candidate fields.
+- Use `JD Search` to submit job requirements and view ranked matches.
 
 Run frontend tests:
 

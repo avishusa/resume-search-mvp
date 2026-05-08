@@ -6,7 +6,9 @@ from app.services.resume_batch_processor import ResumeBatchProcessor
 
 
 class BatchAlreadyRunningError(RuntimeError):
-    pass
+    def __init__(self, active_batch: BatchRunRecord | None = None) -> None:
+        super().__init__("A batch run is already in progress.")
+        self.active_batch = active_batch
 
 
 class ResumeBatchProcessingService:
@@ -39,7 +41,12 @@ class ResumeBatchProcessingService:
         force: bool = False,
     ) -> tuple[BatchRunRecord, LocalDriveIngestionResponse]:
         if not self._lock.acquire(blocking=False):
-            raise BatchAlreadyRunningError("A resume batch is already running.")
+            raise BatchAlreadyRunningError(self.get_active_run())
+
+        active_run = self.get_active_run()
+        if active_run is not None:
+            self._lock.release()
+            raise BatchAlreadyRunningError(active_run)
 
         batch_run = self._batch_run_repository.create_running()
         try:
@@ -63,6 +70,12 @@ class ResumeBatchProcessingService:
 
     def get_run(self, batch_id: str) -> BatchRunRecord | None:
         return self._batch_run_repository.get(batch_id)
+
+    def get_active_run(self) -> BatchRunRecord | None:
+        return self._batch_run_repository.get_active_running()
+
+    def mark_interrupted_runs_failed(self) -> int:
+        return self._batch_run_repository.mark_running_as_interrupted()
 
     def start_scheduler_if_enabled(
         self,

@@ -66,3 +66,33 @@ def test_software_engineer_does_not_match_data_scientist() -> None:
     service = ResumeSearchService(InMemoryResumeRepository())
 
     assert service.title_score("Software Engineer", "Data Scientist") == 0
+
+
+def test_data_science_matches_data_scientist() -> None:
+    service = ResumeSearchService(InMemoryResumeRepository())
+
+    assert service.title_score("Data Science", "Data Scientist") > 0
+
+
+def test_data_scientist_matches_data_science() -> None:
+    service = ResumeSearchService(InMemoryResumeRepository())
+
+    assert service.title_score("Data Scientist", "Data Science") > 0
+
+
+def test_senior_consultant_data_science_matches_data_science() -> None:
+    service = ResumeSearchService(InMemoryResumeRepository())
+
+    assert service.title_score("Data Science", "Senior Consultant Data Science") > 0
+
+
+def test_data_science_does_not_match_ai_engineer() -> None:
+    service = ResumeSearchService(InMemoryResumeRepository())
+
+    assert service.title_score("Data Science", "AI Engineer") == 0
+
+
+def test_data_science_does_not_match_software_engineer() -> None:
+    service = ResumeSearchService(InMemoryResumeRepository())
+
+    assert service.title_score("Data Science", "Software Engineer") == 0

@@ -25,6 +25,7 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     def initialize_database() -> None:
         init_db()
+        batch_processing_service.mark_interrupted_runs_failed()
         batch_processing_service.start_scheduler_if_enabled(
             enabled=settings.enable_nightly_batch,
             hour=settings.nightly_batch_hour,

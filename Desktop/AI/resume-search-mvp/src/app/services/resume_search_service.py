@@ -97,7 +97,8 @@ class ResumeSearchService:
         profile = resume.candidate_profile
         current_title = profile.current_title if profile else None
         parsed_skills = profile.skills if profile else []
-        title_score = self.title_score(request.job_title, current_title)
+        title_match = self._title_matcher.match(request.job_title, current_title)
+        title_score = title_match.score
         matched_required = self.match_skills(
             request.required_skills,
             parsed_skills,
@@ -151,6 +152,14 @@ class ResumeSearchService:
                 missing_required=missing_required,
                 matched_nice=matched_nice,
             ),
+            normalized_jd_title=title_match.normalized_jd_title
+            if request.debug
+            else None,
+            normalized_candidate_title=title_match.normalized_candidate_title
+            if request.debug
+            else None,
+            title_match_type=title_match.match_type if request.debug else None,
+            title_match_reason=title_match.reason if request.debug else None,
         )
 
     def _is_searchable_resume(self, resume: ResumeRecord) -> bool:

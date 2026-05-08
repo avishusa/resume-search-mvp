@@ -18,3 +18,10 @@ class BatchRunResponse(BaseModel):
 
 class BatchRunListResponse(BaseModel):
     runs: list[BatchRunResponse]
+
+
+class ActiveBatchRunResponse(BaseModel):
+    is_running: bool
+    batch_id: str | None = None
+    started_at: str | None = None
+    status: str | None = None

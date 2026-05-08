@@ -224,3 +224,26 @@ def test_candidate_with_no_title_match_is_excluded_even_with_high_experience() -
     assert response.excluded_by_title_count == 1
     assert response.excluded_by_experience_count == 0
     assert response.matched_count == 0
+
+
+def test_search_debug_includes_title_match_details() -> None:
+    repository = InMemoryResumeRepository()
+    repository.save(_record("1", "data.txt", "Data Scientist", ["Python"], years=6))
+    service = ResumeSearchService(repository)
+
+    response = service.search(
+        JobSearchRequest(
+            job_title="Data Science",
+            job_description="Data role",
+            required_skills=["Python"],
+            nice_to_have_skills=[],
+            min_years_experience=0,
+            debug=True,
+        )
+    )
+
+    result = response.results[0]
+    assert result.normalized_jd_title == "data science"
+    assert result.normalized_candidate_title == "data scientist"
+    assert result.title_match_type == "alias"
+    assert result.title_match_reason == "Titles are in the same controlled alias group."
