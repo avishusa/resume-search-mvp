@@ -6,6 +6,7 @@ from app.storage.base import ResumeFileReference
 from app.storage.factory import (
     StorageProviderConfigurationError,
     create_resume_storage_provider,
+    get_storage_providers,
 )
 from app.storage.google_drive import GoogleDriveResumeStorageProvider
 from app.storage.local_folder import LocalFolderResumeStorageProvider
@@ -113,10 +114,43 @@ class FakeGoogleDriveService:
 
 def test_provider_factory_returns_local_provider_by_default(monkeypatch) -> None:
     monkeypatch.delenv("RESUME_STORAGE_PROVIDER", raising=False)
+    monkeypatch.delenv("RESUME_STORAGE_PROVIDERS", raising=False)
 
     provider = create_resume_storage_provider(Settings(_env_file=None))
 
     assert isinstance(provider, LocalFolderResumeStorageProvider)
+
+
+def test_provider_factory_returns_local_provider_list_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("RESUME_STORAGE_PROVIDER", raising=False)
+    monkeypatch.delenv("RESUME_STORAGE_PROVIDERS", raising=False)
+
+    providers = get_storage_providers(Settings(_env_file=None))
+
+    assert len(providers) == 1
+    assert isinstance(providers[0], LocalFolderResumeStorageProvider)
+
+
+def test_provider_factory_returns_multiple_configured_providers(monkeypatch) -> None:
+    monkeypatch.setenv("RESUME_STORAGE_PROVIDERS", "local,google_drive")
+    monkeypatch.setenv("GOOGLE_DRIVE_FOLDER_ID", "folder-id")
+    monkeypatch.setenv("GOOGLE_SERVICE_ACCOUNT_FILE", "service-account.json")
+
+    providers = get_storage_providers(Settings(_env_file=None))
+
+    assert [provider.provider_name for provider in providers] == [
+        "local",
+        "google_drive",
+    ]
+
+
+def test_provider_factory_unknown_provider_raises_clear_error(monkeypatch) -> None:
+    monkeypatch.setenv("RESUME_STORAGE_PROVIDERS", "local,unknown")
+
+    with pytest.raises(StorageProviderConfigurationError) as error:
+        get_storage_providers(Settings(_env_file=None))
+
+    assert "Unsupported resume storage provider: unknown" in str(error.value)
 
 
 def test_provider_factory_returns_google_provider_when_configured(monkeypatch) -> None:

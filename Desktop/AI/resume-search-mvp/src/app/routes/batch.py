@@ -16,7 +16,7 @@ router = APIRouter(prefix="/batch", tags=["batch"])
 @router.post("/run-local-drive", response_model=BatchRunResponse)
 def run_local_drive_batch(force: bool = False) -> BatchRunResponse:
     try:
-        batch_run, _summary = batch_processing_service.run_local_drive_batch(force=force)
+        batch_run, summary = batch_processing_service.run_local_drive_batch(force=force)
     except BatchAlreadyRunningError as error:
         raise _batch_already_running_http_error(error) from error
     except Exception as error:
@@ -24,13 +24,13 @@ def run_local_drive_batch(force: bool = False) -> BatchRunResponse:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(error),
         ) from error
-    return _to_response(batch_run)
+    return _to_response(batch_run, providers=summary.providers)
 
 
 @router.post("/run", response_model=BatchRunResponse)
 def run_configured_batch(force: bool = False) -> BatchRunResponse:
     try:
-        batch_run, _summary = batch_processing_service.run_batch(force=force)
+        batch_run, summary = batch_processing_service.run_batch(force=force)
     except BatchAlreadyRunningError as error:
         raise _batch_already_running_http_error(error) from error
     except Exception as error:
@@ -38,7 +38,7 @@ def run_configured_batch(force: bool = False) -> BatchRunResponse:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(error),
         ) from error
-    return _to_response(batch_run)
+    return _to_response(batch_run, providers=summary.providers)
 
 
 @router.get("/runs", response_model=BatchRunListResponse)
@@ -72,7 +72,7 @@ def get_batch_run(batch_id: str) -> BatchRunResponse:
     return _to_response(batch_run)
 
 
-def _to_response(batch_run) -> BatchRunResponse:
+def _to_response(batch_run, providers=None) -> BatchRunResponse:
     return BatchRunResponse(
         batch_id=batch_run.batch_id,
         started_at=_datetime_to_iso(batch_run.started_at),
@@ -88,6 +88,7 @@ def _to_response(batch_run) -> BatchRunResponse:
         parsed_count=batch_run.parsed_count,
         fallback_count=batch_run.fallback_count,
         error_message=batch_run.error_message,
+        providers=providers or [],
     )
 
 

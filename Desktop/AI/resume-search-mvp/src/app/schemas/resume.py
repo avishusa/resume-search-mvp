@@ -11,6 +11,8 @@ class ResumeUploadResponse(BaseModel):
 
 class ResumeListItem(BaseModel):
     resume_id: str
+    provider_name: str | None = None
+    source_id: str | None = None
     file_name: str
     source_path: str | None
     file_type: str | None = None
@@ -42,6 +44,8 @@ class ResumeListItem(BaseModel):
 
 class ResumeIngestionItem(BaseModel):
     resume_id: str
+    provider_name: str | None = None
+    source_id: str | None = None
     file_name: str
     source_path: str | None
     file_type: str
@@ -59,6 +63,18 @@ class ResumeIngestionItem(BaseModel):
     extracted_text_preview: str
 
 
+class ProviderIngestionSummary(BaseModel):
+    provider_name: str
+    total_files_seen: int
+    ingested_count: int
+    updated_count: int = 0
+    skipped_count: int
+    failed_count: int
+    parsed_count: int = 0
+    fallback_count: int = 0
+    error_message: str | None = None
+
+
 class LocalDriveIngestionResponse(BaseModel):
     total_files_seen: int
     ingested_count: int
@@ -68,3 +84,4 @@ class LocalDriveIngestionResponse(BaseModel):
     parsed_count: int = 0
     fallback_count: int = 0
     resumes: list[ResumeIngestionItem]
+    providers: list[ProviderIngestionSummary] = Field(default_factory=list)

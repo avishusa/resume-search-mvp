@@ -25,6 +25,8 @@ class ResumeRecord:
     created_at: datetime | None = None
     updated_at: datetime | None = None
     candidate_profile: CandidateProfile | None = None
+    provider_name: str = "local"
+    source_id: str | None = None
 
     @property
     def mime_type(self) -> str:
@@ -39,11 +41,16 @@ class InMemoryResumeRepository:
     def __init__(self) -> None:
         self._records: dict[str, ResumeRecord] = {}
         self._source_path_index: dict[str, str] = {}
+        self._provider_source_index: dict[tuple[str, str], str] = {}
 
     def save(self, record: ResumeRecord) -> ResumeRecord:
         self._records[record.resume_id] = record
         if record.source_path is not None:
             self._source_path_index[record.source_path] = record.resume_id
+        if record.source_id is not None:
+            self._provider_source_index[
+                (record.provider_name, record.source_id)
+            ] = record.resume_id
         return record
 
     def get(self, resume_id: str) -> ResumeRecord | None:
@@ -65,6 +72,27 @@ class InMemoryResumeRepository:
             return None
         return record
 
+    def get_by_provider_and_source_id(
+        self,
+        provider_name: str,
+        source_id: str,
+    ) -> ResumeRecord | None:
+        resume_id = self._provider_source_index.get((provider_name, source_id))
+        if resume_id is None:
+            return None
+        return self.get(resume_id)
+
+    def get_by_provider_source_id_and_file_hash(
+        self,
+        provider_name: str,
+        source_id: str,
+        file_hash: str,
+    ) -> ResumeRecord | None:
+        record = self.get_by_provider_and_source_id(provider_name, source_id)
+        if record is None or record.file_hash != file_hash:
+            return None
+        return record
+
     def list_all(self) -> list[ResumeRecord]:
         return list(self._records.values())
 
@@ -80,3 +108,4 @@ class InMemoryResumeRepository:
     def clear(self) -> None:
         self._records.clear()
         self._source_path_index.clear()
+        self._provider_source_index.clear()

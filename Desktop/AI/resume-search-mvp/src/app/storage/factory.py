@@ -10,9 +10,34 @@ class StorageProviderConfigurationError(ValueError):
     """Raised when the configured resume storage provider cannot be created."""
 
 
-def create_resume_storage_provider(settings: Settings) -> ResumeStorageProvider:
-    provider_name = settings.resume_storage_provider.strip().lower()
+def create_resume_storage_providers(settings: Settings) -> list[ResumeStorageProvider]:
+    provider_names = settings.resume_storage_provider_list
+    if not provider_names:
+        raise StorageProviderConfigurationError(
+            "RESUME_STORAGE_PROVIDERS must include at least one provider."
+        )
 
+    return [
+        create_resume_storage_provider_by_name(settings, provider_name)
+        for provider_name in provider_names
+    ]
+
+
+def get_storage_providers(settings: Settings) -> list[ResumeStorageProvider]:
+    return create_resume_storage_providers(settings)
+
+
+def create_resume_storage_provider(settings: Settings) -> ResumeStorageProvider:
+    return create_resume_storage_provider_by_name(
+        settings,
+        settings.resume_storage_provider.strip().lower(),
+    )
+
+
+def create_resume_storage_provider_by_name(
+    settings: Settings,
+    provider_name: str,
+) -> ResumeStorageProvider:
     if provider_name == "local":
         return create_local_resume_storage_provider(settings)
 
@@ -20,7 +45,7 @@ def create_resume_storage_provider(settings: Settings) -> ResumeStorageProvider:
         return create_google_drive_resume_storage_provider(settings)
 
     raise StorageProviderConfigurationError(
-        f"Unsupported RESUME_STORAGE_PROVIDER: {settings.resume_storage_provider}"
+        f"Unsupported resume storage provider: {provider_name}"
     )
 
 
@@ -33,11 +58,11 @@ def create_google_drive_resume_storage_provider(
 ) -> ResumeStorageProvider:
     if not settings.google_drive_folder_id.strip():
         raise StorageProviderConfigurationError(
-            "GOOGLE_DRIVE_FOLDER_ID is required when RESUME_STORAGE_PROVIDER=google_drive."
+            "GOOGLE_DRIVE_FOLDER_ID is required when google_drive storage is enabled."
         )
     if not settings.google_service_account_file.strip():
         raise StorageProviderConfigurationError(
-            "GOOGLE_SERVICE_ACCOUNT_FILE is required when RESUME_STORAGE_PROVIDER=google_drive."
+            "GOOGLE_SERVICE_ACCOUNT_FILE is required when google_drive storage is enabled."
         )
 
     allowed_mime_types = [

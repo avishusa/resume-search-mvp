@@ -212,7 +212,9 @@ export function JobSearchPage({ form, searchState, onChange, onClear }) {
   );
 }
 
-function SearchResults({ state }) {
+export function SearchResults({ state }) {
+  const [filter, setFilter] = useState("all");
+
   if (state.loading) {
     return <StatusPanel title="Loading" message="Search is running." />;
   }
@@ -229,6 +231,9 @@ function SearchResults({ state }) {
     return <StatusPanel title="No results found" message="No parsed resumes matched this job search." />;
   }
 
+  const visibleResults = filterSearchResults(state.response.results, filter);
+  const resultCounts = getResultFilterCounts(state.response.results);
+
   return (
     <section className="results-panel">
       <div className="summary-strip">
@@ -241,16 +246,85 @@ function SearchResults({ state }) {
         />
       </div>
 
-      <div className="result-list">
-        {state.response.results.map((result) => (
-          <CandidateResult key={result.resume_id} result={result} />
-        ))}
+      <div className="result-controls">
+        <span>Show</span>
+        <button
+          className={filter === "all" ? "active" : ""}
+          type="button"
+          onClick={() => setFilter("all")}
+        >
+          All ({resultCounts.all})
+        </button>
+        <button
+          className={filter === "shortlist" ? "active" : ""}
+          type="button"
+          onClick={() => setFilter("shortlist")}
+        >
+          Shortlisted ({resultCounts.shortlist})
+        </button>
+        <button
+          className={filter === "review" ? "active" : ""}
+          type="button"
+          onClick={() => setFilter("review")}
+        >
+          Review ({resultCounts.review})
+        </button>
+        <button
+          className={filter === "not_recommended" ? "active" : ""}
+          type="button"
+          onClick={() => setFilter("not_recommended")}
+        >
+          Not Recommended ({resultCounts.not_recommended})
+        </button>
+      </div>
+
+      <div className="result-list scrollable-results">
+        {visibleResults.length === 0 ? (
+          <StatusPanel
+            title="No candidates in this group"
+            message="Try another result filter."
+          />
+        ) : (
+          visibleResults.map((result) => (
+            <CandidateResult key={result.resume_id} result={result} />
+          ))
+        )}
       </div>
     </section>
   );
 }
 
-function CandidateResult({ result }) {
+export function getResultFilterCounts(results) {
+  return {
+    all: results.length,
+    shortlist: results.filter((result) => result.shortlist_decision === "shortlist")
+      .length,
+    review: results.filter((result) => result.shortlist_decision === "review").length,
+    not_recommended: results.filter(
+      (result) => result.shortlist_decision === "not_recommended",
+    ).length,
+  };
+}
+
+export function filterSearchResults(results, filter) {
+  const sortedResults = [...results].sort(
+    (first, second) => Number(second.overall_score || 0) - Number(first.overall_score || 0),
+  );
+  if (filter === "shortlist") {
+    return sortedResults.filter((result) => result.shortlist_decision === "shortlist");
+  }
+  if (filter === "review") {
+    return sortedResults.filter((result) => result.shortlist_decision === "review");
+  }
+  if (filter === "not_recommended") {
+    return sortedResults.filter(
+      (result) => result.shortlist_decision === "not_recommended",
+    );
+  }
+  return sortedResults;
+}
+
+export function CandidateResult({ result }) {
   return (
     <article className="candidate-card">
       <div className="candidate-header">
@@ -258,8 +332,15 @@ function CandidateResult({ result }) {
           <h2>{result.candidate_name || "Unnamed Candidate"}</h2>
           <p>{result.current_title || "Title unavailable"}</p>
         </div>
-        <div className="score-pill">{formatScore(result.overall_score)}</div>
+        <div className="candidate-badges">
+          <span className={`decision-badge ${decisionTone(result.shortlist_decision)}`}>
+            {formatDecision(result.shortlist_decision)}
+          </span>
+          <span className="score-pill">{formatScore(result.overall_score)}</span>
+        </div>
       </div>
+
+      <p className="match-summary">{result.match_summary || result.match_reason}</p>
 
       <dl className="details-grid">
         <Detail label="Email" value={result.email || "Not available"} />
@@ -275,15 +356,47 @@ function CandidateResult({ result }) {
         <Detail label="Resume" value={result.file_name} />
       </dl>
 
-      <div className="score-grid">
+      <div className="score-grid explainability-grid">
+        <Metric
+          label="Recommendation"
+          value={formatRecommendation(result.recommendation_level)}
+        />
         <Metric label="Title" value={formatScore(result.title_score)} />
-        <Metric label="Required Skills" value={formatScore(result.required_skill_score)} />
-        <Metric label="Nice-to-Have" value={formatScore(result.nice_to_have_skill_score)} />
+        <Metric
+          label="Required Skills"
+          value={`${formatPercentage(result.required_skill_match_percentage)}%`}
+        />
+        <Metric
+          label="Nice-to-Have"
+          value={`${formatPercentage(result.nice_to_have_skill_match_percentage)}%`}
+        />
       </div>
+
+      <dl className="reason-grid">
+        <Detail
+          label="Title Match Type"
+          value={formatTitleMatchType(result.title_match_type)}
+        />
+        <Detail label="Title Reason" value={result.title_match_reason || "Not available"} />
+        <Detail label="Experience" value={result.experience_match_reason || "Not available"} />
+        <Detail
+          label="Required Skills"
+          value={result.required_skill_match_reason || "Not available"}
+        />
+        <Detail
+          label="Nice-to-Have"
+          value={result.nice_to_have_skill_match_reason || "Not available"}
+        />
+      </dl>
 
       <SkillGroup label="Matched Required" skills={result.matched_required_skills} />
       <SkillGroup label="Missing Required" skills={result.missing_required_skills} muted />
       <SkillGroup label="Matched Nice-to-Have" skills={result.matched_nice_to_have_skills} />
+      <SkillGroup
+        label="Optional Gaps"
+        skills={result.missing_nice_to_have_skills || []}
+        optional
+      />
 
       <p className="match-reason">{result.match_reason}</p>
       <p className="source-path">{result.source_path || "No source path"}</p>
@@ -568,6 +681,20 @@ export function BatchSummaryPanel({ batchRun }) {
         <Metric label="Parsed" value={batchRun.parsed_count} />
         <Metric label="Fallback" value={batchRun.fallback_count} />
       </div>
+      {batchRun.providers?.length > 0 && (
+        <div className="provider-summary-list">
+          {batchRun.providers.map((provider) => (
+            <div className="provider-summary" key={provider.provider_name}>
+              <strong>{provider.provider_name}</strong>
+              <span>{provider.total_files_seen} files</span>
+              <span>{provider.ingested_count} ingested</span>
+              <span>{provider.updated_count} updated</span>
+              <span>{provider.skipped_count} skipped</span>
+              <span>{provider.failed_count} failed</span>
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -702,7 +829,8 @@ function Detail({ label, value }) {
   );
 }
 
-function SkillGroup({ label, skills, muted = false }) {
+function SkillGroup({ label, skills, muted = false, optional = false }) {
+  const skillClassName = optional ? "skill optional" : muted ? "skill muted" : "skill";
   return (
     <div className="skill-row">
       <span>{label}</span>
@@ -711,7 +839,7 @@ function SkillGroup({ label, skills, muted = false }) {
           <em>None</em>
         ) : (
           skills.map((skill) => (
-            <span className={muted ? "skill muted" : "skill"} key={skill}>
+            <span className={skillClassName} key={skill}>
               {skill}
             </span>
           ))
@@ -723,6 +851,47 @@ function SkillGroup({ label, skills, muted = false }) {
 
 function formatScore(score) {
   return `${Math.round(Number(score || 0) * 100)}%`;
+}
+
+function formatPercentage(value) {
+  return Number(value || 0).toFixed(1).replace(/\.0$/, "");
+}
+
+function formatDecision(decision) {
+  return {
+    shortlist: "Shortlist",
+    review: "Review",
+    not_recommended: "Not Recommended",
+  }[decision] || "Review";
+}
+
+function formatRecommendation(level) {
+  return {
+    strong_match: "Strong Match",
+    moderate_match: "Moderate Match",
+    weak_match: "Weak Match",
+  }[level] || "Unknown";
+}
+
+function formatTitleMatchType(matchType) {
+  return {
+    exact: "Exact title match",
+    alias: "Alias title match",
+    compound: "Compound title match",
+    ordered_subset: "Compound title match",
+    title_family: "Related title family match",
+    no_match: "No title match",
+  }[matchType] || "Unknown";
+}
+
+function decisionTone(decision) {
+  if (decision === "shortlist") {
+    return "good";
+  }
+  if (decision === "review") {
+    return "warning";
+  }
+  return "error";
 }
 
 function formatYears(years) {

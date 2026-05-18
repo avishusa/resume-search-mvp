@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from sqlalchemy import create_engine
+from sqlalchemy import inspect, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from app.config import get_settings
@@ -41,3 +42,28 @@ def init_db() -> None:
     from app.models import resume  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    _ensure_resume_provider_columns()
+
+
+def _ensure_resume_provider_columns() -> None:
+    inspector = inspect(engine)
+    if "resumes" not in inspector.get_table_names():
+        return
+
+    existing_columns = {
+        column["name"] for column in inspector.get_columns("resumes")
+    }
+    columns_to_add = []
+    if "provider_name" not in existing_columns:
+        columns_to_add.append("provider_name VARCHAR(64)")
+    if "source_id" not in existing_columns:
+        columns_to_add.append("source_id VARCHAR(1024)")
+
+    if not columns_to_add:
+        return
+
+    with engine.begin() as connection:
+        for column_definition in columns_to_add:
+            connection.execute(
+                text(f"ALTER TABLE resumes ADD COLUMN {column_definition}")
+            )

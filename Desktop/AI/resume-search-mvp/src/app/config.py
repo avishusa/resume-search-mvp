@@ -44,6 +44,10 @@ class Settings(BaseSettings):
         "local",
         validation_alias="RESUME_STORAGE_PROVIDER",
     )
+    resume_storage_providers: str | None = Field(
+        None,
+        validation_alias="RESUME_STORAGE_PROVIDERS",
+    )
     google_drive_folder_id: str = Field(
         "",
         validation_alias="GOOGLE_DRIVE_FOLDER_ID",
@@ -79,6 +83,19 @@ class Settings(BaseSettings):
             origin.strip()
             for origin in self.cors_allowed_origins.split(",")
             if origin.strip()
+        ]
+
+    @property
+    def resume_storage_provider_list(self) -> list[str]:
+        configured_providers = (
+            self.resume_storage_providers
+            if self.resume_storage_providers is not None
+            else self.resume_storage_provider
+        )
+        return [
+            provider.strip().lower()
+            for provider in configured_providers.split(",")
+            if provider.strip()
         ]
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

@@ -1,4 +1,6 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from app.schemas.resume import ProviderIngestionSummary
 
 
 class BatchRunResponse(BaseModel):
@@ -14,6 +16,7 @@ class BatchRunResponse(BaseModel):
     parsed_count: int
     fallback_count: int
     error_message: str | None = None
+    providers: list[ProviderIngestionSummary] = Field(default_factory=list)
 
 
 class BatchRunListResponse(BaseModel):

@@ -23,10 +23,14 @@ def _record(
     resume_id: str = "resume-1",
     source_path: str = "/fake/resume.txt",
     file_hash: str = "hash-1",
+    provider_name: str = "local",
+    source_id: str = "/fake/resume.txt",
 ) -> ResumeRecord:
     now = datetime.now(UTC)
     return ResumeRecord(
         resume_id=resume_id,
+        provider_name=provider_name,
+        source_id=source_id,
         file_name="resume.txt",
         source_path=source_path,
         file_type="text/plain",
@@ -95,6 +99,39 @@ def test_upsert_updates_existing_resume_by_source_path(tmp_path) -> None:
     resumes = repository.list_all()
     assert len(resumes) == 1
     assert resumes[0].file_hash == "new"
+
+
+def test_upsert_uses_provider_name_and_source_id_identity(tmp_path) -> None:
+    repository = _repository(tmp_path)
+    repository.save(
+        _record(
+            resume_id="local-id",
+            provider_name="local",
+            source_id="/fake/resume.txt",
+            source_path="/fake/resume.txt",
+        )
+    )
+    repository.save(
+        _record(
+            resume_id="drive-id",
+            provider_name="google_drive",
+            source_id="drive-file-1",
+            source_path="google_drive://drive-file-1",
+        )
+    )
+
+    local_record = repository.get_by_provider_and_source_id(
+        "local",
+        "/fake/resume.txt",
+    )
+    drive_record = repository.get_by_provider_and_source_id(
+        "google_drive",
+        "drive-file-1",
+    )
+
+    assert len(repository.list_all()) == 2
+    assert local_record.resume_id == "local-id"
+    assert drive_record.resume_id == "drive-id"
 
 
 def test_repository_recreated_with_same_database_keeps_data(tmp_path) -> None:

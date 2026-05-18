@@ -14,11 +14,15 @@ TITLE_WORDS = {
     "learning",
     "machine",
     "python",
+    "senior",
     "scientist",
     "software",
 }
 
 KNOWN_TITLE_PHRASES = [
+    "Senior Data Scientist and Machine Learning Engineer",
+    "Senior Data Scientist & Machine Learning Software Engineer",
+    "Senior Data Scientist",
     "AI Software Engineer",
     "Machine Learning Engineer",
     "Backend Software Engineer",
@@ -108,7 +112,7 @@ class RuleBasedResumeParserProvider:
 
             words = re.findall(r"[A-Za-z][A-Za-z.'-]*", line)
             if 2 <= len(words) <= 4 and len(" ".join(words)) >= 5:
-                return " ".join(word.strip(".") for word in words)
+                return " ".join(words)
 
         return None
 
@@ -142,12 +146,15 @@ class RuleBasedResumeParserProvider:
     def _extract_current_title(self, resume_text: str) -> str | None:
         for raw_line in resume_text.splitlines()[:20]:
             line = raw_line.strip()
-            if not line or len(line) > 80:
+            if not line:
                 continue
 
             known_title = self._extract_known_title_from_line(line)
             if known_title:
                 return known_title
+
+            if len(line) > 80:
+                continue
 
             normalized_words = re.sub(r"[^a-zA-Z0-9\s]", " ", line.lower()).split()
             if not normalized_words:
@@ -166,7 +173,8 @@ class RuleBasedResumeParserProvider:
         normalized_line = re.sub(r"[^a-zA-Z0-9\s]", " ", line.lower())
         normalized_line = re.sub(r"\s+", " ", normalized_line).strip()
         for title in KNOWN_TITLE_PHRASES:
-            normalized_title = title.lower()
+            normalized_title = re.sub(r"[^a-zA-Z0-9\s]", " ", title.lower())
+            normalized_title = re.sub(r"\s+", " ", normalized_title).strip()
             if re.search(rf"\b{re.escape(normalized_title)}\b", normalized_line):
                 return title
         return None

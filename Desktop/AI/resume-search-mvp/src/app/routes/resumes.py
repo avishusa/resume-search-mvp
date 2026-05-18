@@ -51,6 +51,8 @@ def list_resumes() -> list[ResumeListItem]:
     return [
         ResumeListItem(
             resume_id=record.resume_id,
+            provider_name=record.provider_name,
+            source_id=record.source_id,
             file_name=record.file_name,
             source_path=record.source_path,
             file_type=record.file_type,

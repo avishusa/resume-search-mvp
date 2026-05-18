@@ -122,6 +122,8 @@ class ResumeIngestionService:
 
         record = ResumeRecord(
             resume_id=str(uuid4()),
+            provider_name="upload",
+            source_id=None,
             file_name=file_name,
             source_path=source_path,
             file_type=mime_type,
@@ -150,6 +152,8 @@ class ResumeIngestionService:
     def _to_ingestion_item(self, record: ResumeRecord) -> ResumeIngestionItem:
         return ResumeIngestionItem(
             resume_id=record.resume_id,
+            provider_name=record.provider_name,
+            source_id=record.source_id,
             file_name=record.file_name,
             source_path=record.source_path,
             file_type=record.file_type,

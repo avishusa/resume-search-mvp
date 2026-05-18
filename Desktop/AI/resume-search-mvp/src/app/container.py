@@ -13,12 +13,14 @@ from app.services.resume_service import ResumeUploadService
 from app.storage.factory import (
     create_local_resume_storage_provider,
     create_resume_storage_provider,
+    create_resume_storage_providers,
 )
 
 settings = get_settings()
 resume_repository = SQLAlchemyResumeRepository()
 batch_run_repository = BatchRunRepository()
 resume_storage_provider = create_resume_storage_provider(settings)
+resume_storage_providers = create_resume_storage_providers(settings)
 local_resume_storage_provider = create_local_resume_storage_provider(settings)
 
 skill_catalog = [
@@ -56,6 +58,7 @@ resume_batch_processor = ResumeBatchProcessor(
     repository=resume_repository,
     candidate_profile_service=candidate_profile_service,
     storage_provider=resume_storage_provider,
+    storage_providers=resume_storage_providers,
 )
 local_resume_batch_processor = ResumeBatchProcessor(
     repository=resume_repository,

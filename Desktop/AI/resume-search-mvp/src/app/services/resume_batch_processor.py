@@ -7,7 +7,11 @@ from app.extraction.docx import DocxTextExtractor
 from app.extraction.pdf import PdfTextExtractor
 from app.extraction.txt import TxtTextExtractor
 from app.repositories.resume_repository import InMemoryResumeRepository, ResumeRecord
-from app.schemas.resume import LocalDriveIngestionResponse, ResumeIngestionItem
+from app.schemas.resume import (
+    LocalDriveIngestionResponse,
+    ProviderIngestionSummary,
+    ResumeIngestionItem,
+)
 from app.services.candidate_profile_service import CandidateProfileService
 from app.storage.base import ResumeFileReference, ResumeStorageProvider
 from app.storage.local_folder import LocalFolderResumeStorageProvider
@@ -19,6 +23,7 @@ class ResumeBatchProcessor:
         repository: InMemoryResumeRepository,
         candidate_profile_service: CandidateProfileService,
         storage_provider: ResumeStorageProvider | None = None,
+        storage_providers: list[ResumeStorageProvider] | None = None,
         extractors: dict[str, TextExtractor] | None = None,
     ) -> None:
         self._repository = repository
@@ -26,6 +31,7 @@ class ResumeBatchProcessor:
         self._storage_provider = storage_provider or LocalFolderResumeStorageProvider(
             "data/drive_resumes"
         )
+        self._storage_providers = storage_providers
         self._extractors = extractors or {
             "application/pdf": PdfTextExtractor(),
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document": DocxTextExtractor(),
@@ -41,17 +47,81 @@ class ResumeBatchProcessor:
         parsed_count = 0
         fallback_count = 0
         resumes: list[ResumeIngestionItem] = []
+        provider_summaries: list[ProviderIngestionSummary] = []
 
-        for file_reference in self._storage_provider.list_resume_files():
+        for provider in self._get_storage_providers():
+            provider_summary = self._process_provider(
+                provider=provider,
+                force=force,
+                resumes=resumes,
+            )
+            provider_summaries.append(provider_summary)
+            total_files_seen += provider_summary.total_files_seen
+            ingested_count += provider_summary.ingested_count
+            updated_count += provider_summary.updated_count
+            skipped_count += provider_summary.skipped_count
+            failed_count += provider_summary.failed_count
+            parsed_count += provider_summary.parsed_count
+            fallback_count += provider_summary.fallback_count
+
+        return LocalDriveIngestionResponse(
+            total_files_seen=total_files_seen,
+            ingested_count=ingested_count,
+            updated_count=updated_count,
+            skipped_count=skipped_count,
+            failed_count=failed_count,
+            parsed_count=parsed_count,
+            fallback_count=fallback_count,
+            resumes=resumes,
+            providers=provider_summaries,
+        )
+
+    def _get_storage_providers(self) -> list[ResumeStorageProvider]:
+        if self._storage_providers is None:
+            return [self._storage_provider]
+        if len(self._storage_providers) == 1:
+            return [self._storage_provider]
+        return self._storage_providers
+
+    def _process_provider(
+        self,
+        provider: ResumeStorageProvider,
+        force: bool,
+        resumes: list[ResumeIngestionItem],
+    ) -> ProviderIngestionSummary:
+        total_files_seen = 0
+        ingested_count = 0
+        updated_count = 0
+        skipped_count = 0
+        failed_count = 0
+        parsed_count = 0
+        fallback_count = 0
+
+        try:
+            file_references = provider.list_resume_files()
+        except Exception as exception:
+            return ProviderIngestionSummary(
+                provider_name=provider.provider_name,
+                total_files_seen=0,
+                ingested_count=0,
+                updated_count=0,
+                skipped_count=0,
+                failed_count=1,
+                parsed_count=0,
+                fallback_count=0,
+                error_message=str(exception),
+            )
+
+        for file_reference in file_references:
             total_files_seen += 1
             try:
-                file_bytes = self._storage_provider.read_file(file_reference)
+                file_bytes = provider.read_file(file_reference)
                 file_hash = self._hash_file_bytes(file_bytes)
             except Exception:
                 failed_count += 1
                 continue
 
-            existing_record = self._repository.get_by_source_path(file_reference.source_path)
+            existing_record = self._get_existing_record(file_reference)
             if existing_record and existing_record.file_hash == file_hash and not force:
                 skipped_count += 1
                 resumes.append(self._to_ingestion_item(existing_record))
@@ -82,7 +152,8 @@ class ResumeBatchProcessor:
 
             resumes.append(self._to_ingestion_item(record))
 
-        return LocalDriveIngestionResponse(
+        return ProviderIngestionSummary(
+            provider_name=provider.provider_name,
             total_files_seen=total_files_seen,
             ingested_count=ingested_count,
             updated_count=updated_count,
@@ -90,8 +161,29 @@ class ResumeBatchProcessor:
             failed_count=failed_count,
             parsed_count=parsed_count,
             fallback_count=fallback_count,
-            resumes=resumes,
         )
+
+    def _get_existing_record(
+        self,
+        file_reference: ResumeFileReference,
+    ) -> ResumeRecord | None:
+        if file_reference.source_id and hasattr(
+            self._repository,
+            "get_by_provider_and_source_id",
+        ):
+            record = self._repository.get_by_provider_and_source_id(
+                file_reference.provider_name,
+                file_reference.source_id,
+            )
+            if record is not None:
+                return record
+            legacy_record = self._repository.get_by_source_path(
+                file_reference.source_path
+            )
+            if legacy_record is not None and legacy_record.source_id is None:
+                return legacy_record
+            return None
+        return self._repository.get_by_source_path(file_reference.source_path)
 
     def _process_file(
         self,
@@ -132,6 +224,8 @@ class ResumeBatchProcessor:
 
         record = ResumeRecord(
             resume_id=resume_id,
+            provider_name=file_reference.provider_name,
+            source_id=file_reference.source_id,
             file_name=file_reference.file_name,
             source_path=file_reference.source_path,
             file_type=file_reference.file_type,
@@ -157,6 +251,8 @@ class ResumeBatchProcessor:
     def _to_ingestion_item(self, record: ResumeRecord) -> ResumeIngestionItem:
         return ResumeIngestionItem(
             resume_id=record.resume_id,
+            provider_name=record.provider_name,
+            source_id=record.source_id,
             file_name=record.file_name,
             source_path=record.source_path,
             file_type=record.file_type,

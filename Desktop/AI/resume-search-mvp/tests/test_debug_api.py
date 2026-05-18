@@ -2,6 +2,7 @@ import json
 
 from fastapi.testclient import TestClient
 
+from app.container import debug_service
 from app.main import create_app
 
 
@@ -95,3 +96,18 @@ def test_debug_parse_resume_text_uses_ollama_when_mocked_successfully(monkeypatc
     assert body["parsing_error"] is None
     assert body["ollama_error"] is None
     assert body["ollama_raw_response_preview"]
+
+
+def test_debug_storage_provider_returns_local_status(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(debug_service._settings, "local_drive_resume_dir", str(tmp_path))
+    (tmp_path / "resume.txt").write_text("AI Engineer", encoding="utf-8")
+    client = TestClient(create_app())
+
+    response = client.get("/debug/storage-provider")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["configured_providers"] == ["local"]
+    assert body["providers"][0]["provider_name"] == "local"
+    assert body["providers"][0]["exists"] is True
+    assert body["providers"][0]["supported_file_count"] == 1

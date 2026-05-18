@@ -11,6 +11,8 @@ class ResumeModel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     resume_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    provider_name: Mapped[str] = mapped_column(String(64), index=True, nullable=True)
+    source_id: Mapped[str] = mapped_column(String(1024), index=True, nullable=True)
     file_name: Mapped[str] = mapped_column(String(255))
     source_path: Mapped[str] = mapped_column(String(1024), unique=True, index=True, nullable=True)
     file_type: Mapped[str] = mapped_column(String(255))

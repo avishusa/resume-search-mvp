@@ -191,7 +191,7 @@ def test_search_does_not_call_parser_during_search(tmp_path, monkeypatch) -> Non
     assert body["results"][0]["file_name"] == "ai-engineer.txt"
 
 
-def test_search_filters_by_min_years_experience_with_seeded_profiles() -> None:
+def test_search_keeps_title_matches_and_marks_experience_failures_with_seeded_profiles() -> None:
     resume_repository.clear()
     resume_repository.save(_parsed_record("senior", "senior.txt", 6))
     resume_repository.save(_parsed_record("mid", "mid.txt", 4))
@@ -214,9 +214,86 @@ def test_search_filters_by_min_years_experience_with_seeded_profiles() -> None:
     assert body["total_candidates_considered"] == 3
     assert body["excluded_by_title_count"] == 0
     assert body["excluded_by_experience_count"] == 2
-    assert body["matched_count"] == 1
-    assert [result["file_name"] for result in body["results"]] == ["senior.txt"]
+    assert body["matched_count"] == 3
+    assert [result["file_name"] for result in body["results"]] == [
+        "senior.txt",
+        "mid.txt",
+        "unknown.txt",
+    ]
+    assert body["results"][0]["shortlist_decision"] == "shortlist"
+    assert body["results"][1]["shortlist_decision"] == "not_recommended"
+    assert body["results"][1]["experience_passed"] is False
+    assert body["results"][2]["shortlist_decision"] == "review"
+    assert body["results"][2]["experience_passed"] is None
     assert "Experience requirement met: 6 years >= 5 years" in body["results"][0]["match_reason"]
+
+
+def test_search_data_scientist_all_results_include_below_experience_candidate() -> None:
+    resume_repository.clear()
+    now = datetime.now(UTC)
+    for resume_id, file_name, title, years in [
+        ("jillani", "Jillani.pdf", "Senior Data Scientist", 5.4),
+        ("bhavesh", "Bhavesh.pdf", "Data Scientist", 4.5),
+        ("ai", "AI.pdf", "AI Engineer", 8),
+    ]:
+        resume_repository.save(
+            ResumeRecord(
+                resume_id=resume_id,
+                file_name=file_name,
+                source_path=f"/fake/{file_name}",
+                file_type="application/pdf",
+                file_hash=resume_id,
+                last_modified=now,
+                extraction_status="extracted",
+                parsing_status="parsed",
+                parser_used="ollama",
+                parsing_error=None,
+                ollama_error=None,
+                ollama_raw_response_preview=None,
+                ollama_model="llama3.1:8b",
+                extracted_text=f"{title}\nPython SQL Machine Learning",
+                parsed_at=now,
+                ingested_at=now,
+                candidate_profile=CandidateProfile(
+                    candidate_name=file_name,
+                    email=f"{resume_id}@example.com",
+                    phone=None,
+                    current_title=title,
+                    skills=["Python", "SQL", "Machine Learning"],
+                    total_experience_years=years,
+                    companies=[],
+                    education=[],
+                    resume_summary="",
+                    confidence_score=0.9,
+                    parsing_status="parsed",
+                    parser_used="ollama",
+                ),
+            )
+        )
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/jobs/search",
+        json={
+            "job_title": "Data Scientist",
+            "job_description": "Data role",
+            "required_skills": ["Python", "SQL", "Machine Learning"],
+            "nice_to_have_skills": [],
+            "min_years_experience": 5,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["excluded_by_title_count"] == 1
+    assert body["excluded_by_experience_count"] == 1
+    assert body["matched_count"] == 2
+    assert [result["file_name"] for result in body["results"]] == [
+        "Jillani.pdf",
+        "Bhavesh.pdf",
+    ]
+    assert body["results"][0]["shortlist_decision"] == "shortlist"
+    assert body["results"][1]["shortlist_decision"] == "not_recommended"
 
 
 def test_search_does_not_trigger_batch_processor(monkeypatch) -> None:

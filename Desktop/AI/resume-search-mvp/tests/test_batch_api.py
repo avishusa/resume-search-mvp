@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+from datetime import UTC, datetime
 
 from app.container import (
     batch_run_repository,
@@ -9,7 +10,29 @@ from app.container import (
 from app.main import create_app
 from app.parsing.rule_based import RuleBasedResumeParserProvider
 from app.services.candidate_profile_service import CandidateProfileService
+from app.storage.base import ResumeFileReference
 from app.storage.local_folder import LocalFolderResumeStorageProvider
+
+
+class FakeApiStorageProvider:
+    def __init__(self, provider_name: str, file_name: str, text: str) -> None:
+        self.provider_name = provider_name
+        self._file_bytes = text.encode("utf-8")
+        self._reference = ResumeFileReference(
+            source_id=f"{provider_name}-source",
+            source_path=f"{provider_name}://{file_name}",
+            file_name=file_name,
+            file_type="text/plain",
+            last_modified=datetime.now(UTC),
+            size_bytes=len(self._file_bytes),
+            provider_name=provider_name,
+        )
+
+    def list_resume_files(self) -> list[ResumeFileReference]:
+        return [self._reference]
+
+    def read_file(self, file_reference: ResumeFileReference) -> bytes:
+        return self._file_bytes
 
 
 def test_batch_run_local_drive_endpoint_records_run(tmp_path, monkeypatch) -> None:
@@ -72,6 +95,89 @@ def test_batch_run_endpoint_uses_configured_provider(tmp_path, monkeypatch) -> N
     assert response.json()["status"] == "completed"
     assert response.json()["ingested_count"] == 1
     assert resume_repository.list_all()[0].file_name == "configured-provider-resume.txt"
+
+
+def test_batch_run_endpoint_uses_all_configured_providers(monkeypatch) -> None:
+    resume_repository.clear()
+    batch_run_repository.clear()
+    local_provider = FakeApiStorageProvider(
+        "local",
+        "local-resume.txt",
+        "AI Engineer\nPython",
+    )
+    google_provider = FakeApiStorageProvider(
+        "google_drive",
+        "google-resume.txt",
+        "AI Engineer\nPython",
+    )
+    monkeypatch.setattr(resume_batch_processor, "_storage_provider", local_provider)
+    monkeypatch.setattr(
+        resume_batch_processor,
+        "_storage_providers",
+        [local_provider, google_provider],
+    )
+    monkeypatch.setattr(
+        resume_batch_processor,
+        "_candidate_profile_service",
+        CandidateProfileService(
+            primary_parser=RuleBasedResumeParserProvider(),
+            fallback_parser=RuleBasedResumeParserProvider(),
+        ),
+    )
+    client = TestClient(create_app())
+
+    response = client.post("/batch/run")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ingested_count"] == 2
+    assert [provider["provider_name"] for provider in body["providers"]] == [
+        "local",
+        "google_drive",
+    ]
+    assert {record.provider_name for record in resume_repository.list_all()} == {
+        "local",
+        "google_drive",
+    }
+
+
+def test_batch_run_local_drive_endpoint_uses_only_local_provider(monkeypatch) -> None:
+    resume_repository.clear()
+    batch_run_repository.clear()
+    local_provider = FakeApiStorageProvider(
+        "local",
+        "local-only.txt",
+        "AI Engineer\nPython",
+    )
+    google_provider = FakeApiStorageProvider(
+        "google_drive",
+        "google-ignored.txt",
+        "AI Engineer\nPython",
+    )
+    monkeypatch.setattr(local_resume_batch_processor, "_storage_provider", local_provider)
+    monkeypatch.setattr(local_resume_batch_processor, "_storage_providers", None)
+    monkeypatch.setattr(
+        resume_batch_processor,
+        "_storage_providers",
+        [local_provider, google_provider],
+    )
+    monkeypatch.setattr(
+        local_resume_batch_processor,
+        "_candidate_profile_service",
+        CandidateProfileService(
+            primary_parser=RuleBasedResumeParserProvider(),
+            fallback_parser=RuleBasedResumeParserProvider(),
+        ),
+    )
+    client = TestClient(create_app())
+
+    response = client.post("/batch/run-local-drive")
+
+    assert response.status_code == 200
+    assert response.json()["ingested_count"] == 1
+    assert [record.file_name for record in resume_repository.list_all()] == [
+        "local-only.txt"
+    ]
 
 
 def test_active_batch_status_returns_false_when_no_batch_is_running() -> None:

@@ -1,4 +1,5 @@
 import json
+import re
 
 import httpx
 from pydantic import ValidationError
@@ -184,12 +185,14 @@ class OllamaResumeParserProvider:
         normalized_data = dict(profile_data)
         for key in [
             "candidate_name",
-            "email",
             "phone",
             "current_title",
             "resume_summary",
         ]:
             normalized_data[key] = self._normalize_string_value(normalized_data.get(key))
+        normalized_data["email"] = self._normalize_email_value(
+            normalized_data.get("email")
+        )
 
         normalized_data["skills"] = self._normalize_string_list(
             normalized_data.get("skills")
@@ -212,16 +215,37 @@ class OllamaResumeParserProvider:
     def _normalize_string_value(self, value: object) -> str | None:
         if value is None:
             return None
+        if isinstance(value, list):
+            for item in value:
+                normalized_item = self._normalize_string_value(item)
+                if normalized_item:
+                    return normalized_item
+            return None
         if not isinstance(value, str):
-            return value
+            return None
         cleaned_value = value.strip()
         return cleaned_value or None
+
+    def _normalize_email_value(self, value: object) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, list):
+            for item in value:
+                normalized_email = self._normalize_email_value(item)
+                if normalized_email:
+                    return normalized_email
+            return None
+        if not isinstance(value, str):
+            return None
+
+        match = re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", value.strip())
+        return match.group(0) if match else None
 
     def _normalize_string_list(self, value: object) -> list[str]:
         if value is None:
             return []
         if isinstance(value, str):
-            value = [value]
+            value = value.split(",") if "," in value else [value]
         if not isinstance(value, list):
             return []
 

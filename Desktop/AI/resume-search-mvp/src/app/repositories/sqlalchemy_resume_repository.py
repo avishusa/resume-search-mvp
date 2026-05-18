@@ -35,6 +35,9 @@ class SQLAlchemyResumeRepository:
     def upsert_by_source_path(self, record: ResumeRecord) -> ResumeRecord:
         return self.save(record)
 
+    def upsert_by_provider_and_source_id(self, record: ResumeRecord) -> ResumeRecord:
+        return self.save(record)
+
     def get(self, resume_id: str) -> ResumeRecord | None:
         with self._session_factory() as session:
             model = session.scalar(
@@ -58,6 +61,36 @@ class SQLAlchemyResumeRepository:
             model = session.scalar(
                 select(ResumeModel).where(
                     ResumeModel.source_path == source_path,
+                    ResumeModel.file_hash == file_hash,
+                )
+            )
+            return self._to_record(model) if model else None
+
+    def get_by_provider_and_source_id(
+        self,
+        provider_name: str,
+        source_id: str,
+    ) -> ResumeRecord | None:
+        with self._session_factory() as session:
+            model = session.scalar(
+                select(ResumeModel).where(
+                    ResumeModel.provider_name == provider_name,
+                    ResumeModel.source_id == source_id,
+                )
+            )
+            return self._to_record(model) if model else None
+
+    def get_by_provider_source_id_and_file_hash(
+        self,
+        provider_name: str,
+        source_id: str,
+        file_hash: str,
+    ) -> ResumeRecord | None:
+        with self._session_factory() as session:
+            model = session.scalar(
+                select(ResumeModel).where(
+                    ResumeModel.provider_name == provider_name,
+                    ResumeModel.source_id == source_id,
                     ResumeModel.file_hash == file_hash,
                 )
             )
@@ -101,11 +134,23 @@ class SQLAlchemyResumeRepository:
         )
         if model is not None:
             return model
+        if record.source_id is not None:
+            model = session.scalar(
+                select(ResumeModel).where(
+                    ResumeModel.provider_name == record.provider_name,
+                    ResumeModel.source_id == record.source_id,
+                )
+            )
+            if model is not None:
+                return model
         if record.source_path is None:
             return None
-        return session.scalar(
+        model = session.scalar(
             select(ResumeModel).where(ResumeModel.source_path == record.source_path)
         )
+        if model is not None and model.source_id is None:
+            return model
+        return None
 
     def _to_model(
         self,
@@ -129,6 +174,8 @@ class SQLAlchemyResumeRepository:
     ) -> None:
         profile = record.candidate_profile
         model.resume_id = record.resume_id
+        model.provider_name = record.provider_name
+        model.source_id = record.source_id
         model.file_name = record.file_name
         model.source_path = record.source_path
         model.file_type = record.file_type
@@ -183,6 +230,8 @@ class SQLAlchemyResumeRepository:
             created_at=model.created_at,
             updated_at=model.updated_at,
             candidate_profile=profile,
+            provider_name=model.provider_name or "local",
+            source_id=model.source_id or model.source_path,
         )
 
     def _to_candidate_profile(self, model: ResumeModel) -> CandidateProfile | None:

@@ -53,3 +53,35 @@ def test_rule_based_parser_extracts_bhavesh_style_resume_with_pdf_symbols() -> N
     assert "Machine Learning" in profile.skills
     assert "GCP" in profile.skills
     assert "Docker" in profile.skills
+
+
+def test_rule_based_parser_extracts_jillani_style_compound_title() -> None:
+    parser = RuleBasedResumeParserProvider(skill_catalog=["Python", "Machine Learning"])
+
+    profile = parser.parse(
+        "Muhammad G. Jillani\n"
+        "Senior Data Scientist and Machine Learning Engineer\n"
+        "m.g.jillani123@gmail.com\n"
+        "Skills: Python, Machine Learning\n"
+    )
+
+    assert profile.parser_used == "rule_based"
+    assert profile.parsing_status == "parsed"
+    assert profile.candidate_name == "Muhammad G. Jillani"
+    assert profile.current_title == "Senior Data Scientist and Machine Learning Engineer"
+    assert profile.email == "m.g.jillani123@gmail.com"
+
+
+def test_rule_based_parser_extracts_jillani_ampersand_title() -> None:
+    parser = RuleBasedResumeParserProvider(skill_catalog=["Python", "Machine Learning"])
+
+    profile = parser.parse(
+        "Muhammad G. Jillani\n"
+        "Senior Data Scientist & Machine Learning Software Engineer (Generative AI) PURELOGICS\n"
+        "m.g.jillani123@gmail.com\n"
+        "Skills: Python, Machine Learning\n"
+    )
+
+    assert profile.parser_used == "rule_based"
+    assert profile.parsing_status == "parsed"
+    assert profile.current_title == "Senior Data Scientist & Machine Learning Software Engineer"

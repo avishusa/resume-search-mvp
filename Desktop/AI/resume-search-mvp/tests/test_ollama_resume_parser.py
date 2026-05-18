@@ -236,6 +236,143 @@ def test_ollama_text_confidence_score_still_returns_ollama_with_calculated_score
     assert result.parsing_error is None
 
 
+def test_ollama_email_list_is_normalized_without_fallback(monkeypatch) -> None:
+    service = _service_with_fake_ollama(
+        monkeypatch,
+        FakeOllamaResponse(
+            {
+                "response": json.dumps(
+                    {
+                        "candidate_name": "Jane Candidate",
+                        "email": ["test@example.com"],
+                        "phone": None,
+                        "current_title": "AI Engineer",
+                        "skills": ["Python"],
+                        "total_experience_years": None,
+                        "companies": [],
+                        "education": [],
+                        "resume_summary": "AI Engineer with Python.",
+                        "confidence_score": 0.8,
+                    }
+                )
+            }
+        ),
+    )
+
+    result = service.parse_with_metadata("Jane Candidate\nAI Engineer\nPython")
+
+    assert result.profile.parser_used == "ollama"
+    assert result.profile.email == "test@example.com"
+    assert result.parsing_error is None
+
+
+def test_ollama_phone_list_uses_first_non_empty_value(monkeypatch) -> None:
+    service = _service_with_fake_ollama(
+        monkeypatch,
+        FakeOllamaResponse(
+            {
+                "response": json.dumps(
+                    {
+                        "candidate_name": "Jane Candidate",
+                        "email": "test@example.com",
+                        "phone": ["", "+92-321-1174167", "+92-321-1179584"],
+                        "current_title": "AI Engineer",
+                        "skills": ["Python"],
+                        "total_experience_years": None,
+                        "companies": [],
+                        "education": [],
+                        "resume_summary": "AI Engineer with Python.",
+                        "confidence_score": 0.8,
+                    }
+                )
+            }
+        ),
+    )
+
+    result = service.parse_with_metadata("Jane Candidate\nAI Engineer\nPython")
+
+    assert result.profile.parser_used == "ollama"
+    assert result.profile.phone == "+92-321-1174167"
+    assert result.parsing_error is None
+
+
+def test_ollama_current_title_list_is_normalized_to_string(monkeypatch) -> None:
+    service = _service_with_fake_ollama(
+        monkeypatch,
+        FakeOllamaResponse(
+            {
+                "response": json.dumps(
+                    {
+                        "candidate_name": "Jane Candidate",
+                        "email": "test@example.com",
+                        "phone": None,
+                        "current_title": ["Senior Data Scientist"],
+                        "skills": "Python, Machine Learning",
+                        "total_experience_years": None,
+                        "companies": None,
+                        "education": None,
+                        "resume_summary": ["Senior Data Scientist with Python."],
+                        "confidence_score": None,
+                    }
+                )
+            }
+        ),
+    )
+
+    result = service.parse_with_metadata("Jane Candidate\nSenior Data Scientist\nPython")
+
+    assert result.profile.parser_used == "ollama"
+    assert result.profile.current_title == "Senior Data Scientist"
+    assert result.profile.skills == ["Python", "Machine Learning"]
+    assert result.profile.companies == []
+    assert result.profile.education == []
+    assert result.parsing_error is None
+
+
+def test_ollama_jillani_like_response_does_not_fallback(monkeypatch) -> None:
+    service = _service_with_fake_ollama(
+        monkeypatch,
+        FakeOllamaResponse(
+            {
+                "response": json.dumps(
+                    {
+                        "candidate_name": "Muhammad G. Jillani",
+                        "email": ["m.g.jillani123@gmail.com"],
+                        "phone": ["+92-321-1174167", "+92-321-1179584"],
+                        "current_title": (
+                            "Senior Data Scientist & Machine Learning Software "
+                            "Engineer (Generative AI) PURELOGICS"
+                        ),
+                        "skills": ["Python", "Machine Learning", "Generative AI"],
+                        "total_experience_years": "5",
+                        "companies": ["PURELOGICS"],
+                        "education": [],
+                        "resume_summary": "Senior Data Scientist at PURELOGICS.",
+                        "confidence_score": "0.87",
+                    }
+                )
+            }
+        ),
+    )
+
+    result = service.parse_with_metadata(
+        "Muhammad G. Jillani\n"
+        "Senior Data Scientist & Machine Learning Software Engineer "
+        "(Generative AI) PURELOGICS\n"
+        "m.g.jillani123@gmail.com\nPython"
+    )
+
+    assert result.profile.parser_used == "ollama"
+    assert result.profile.email == "m.g.jillani123@gmail.com"
+    assert result.profile.phone == "+92-321-1174167"
+    assert (
+        result.profile.current_title
+        == "Senior Data Scientist & Machine Learning Software Engineer (Generative AI) PURELOGICS"
+    )
+    assert result.profile.total_experience_years == 5.0
+    assert result.parsing_error is None
+
+
 def test_invalid_ollama_json_triggers_rule_based_fallback(monkeypatch) -> None:
     service = _service_with_fake_ollama(
         monkeypatch,

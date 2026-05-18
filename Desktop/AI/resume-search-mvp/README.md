@@ -58,7 +58,7 @@ For now, resumes should be placed in:
 data/drive_resumes/
 ```
 
-Supported files are PDF, DOCX, and TXT. TXT extraction is implemented; PDF and DOCX are placeholders for now.
+Supported files are PDF, DOCX, and TXT. Text extraction is implemented for all three file types.
 
 Trigger local Drive ingestion:
 
@@ -74,7 +74,7 @@ You can also trigger the same local batch process through the batch endpoint:
 curl.exe -X POST "http://127.0.0.1:8000/batch/run-local-drive"
 ```
 
-To run the batch process with whichever storage provider is configured:
+To run the batch process with whichever storage providers are configured:
 
 ```powershell
 curl.exe -X POST "http://127.0.0.1:8000/batch/run"
@@ -114,6 +114,7 @@ DATABASE_URL=sqlite:///./data/resume_search.db
 ENABLE_NIGHTLY_BATCH=false
 NIGHTLY_BATCH_HOUR=2
 NIGHTLY_BATCH_MINUTE=0
+RESUME_STORAGE_PROVIDERS=local
 RESUME_STORAGE_PROVIDER=local
 LOCAL_DRIVE_RESUME_DIR=data/drive_resumes
 GOOGLE_DRIVE_FOLDER_ID=
@@ -123,11 +124,11 @@ GOOGLE_DRIVE_ALLOWED_MIME_TYPES=application/pdf,application/vnd.openxmlformats-o
 
 The SQLite database tables are created automatically when the API starts. The database file lives under `data/` and is ignored by git.
 
-Nightly batch scheduling is currently a foundation hook only. `ENABLE_NIGHTLY_BATCH` is disabled by default, and Google Drive integration is not implemented yet. `data/drive_resumes/` remains the local Drive simulator for this MVP step.
+Nightly batch scheduling is currently a foundation hook only. `ENABLE_NIGHTLY_BATCH` is disabled by default. `data/drive_resumes/` remains the local Drive simulator for this MVP step.
 
 ## Storage Providers
 
-Resume batch processing reads files through a storage provider interface. The default provider is `local`, which scans the local simulator folder:
+Resume batch processing reads files through storage provider interfaces. The default provider list is `local`, which scans the local simulator folder:
 
 ```text
 data/drive_resumes/
@@ -136,20 +137,29 @@ data/drive_resumes/
 Configure it with:
 
 ```text
+RESUME_STORAGE_PROVIDERS=local
 RESUME_STORAGE_PROVIDER=local
 LOCAL_DRIVE_RESUME_DIR=data/drive_resumes
 ```
 
-A `GoogleDriveResumeStorageProvider` is available for the first Google Drive ingestion foundation. It authenticates with a service account, lists supported resume files from a configured folder, downloads bytes, and provides metadata through the shared storage interface.
+`RESUME_STORAGE_PROVIDER` is still supported for backward compatibility. When `RESUME_STORAGE_PROVIDERS` is set, it takes priority and can include more than one provider:
+
+```text
+RESUME_STORAGE_PROVIDERS=local,google_drive
+```
+
+`POST /batch/run` scans every configured provider. `POST /batch/run-local-drive` always scans only the local simulator provider, which is useful for local testing. Batch responses include per-provider counts so you can see how many files came from `local` versus `google_drive`.
+
+A `GoogleDriveResumeStorageProvider` authenticates with a service account, lists supported resume files from a configured folder, downloads bytes, and provides metadata through the shared storage interface.
 
 ### Google Drive Setup
 
 Google Drive support is available behind the same storage provider interface, but local remains the default for development.
 
-To switch batch ingestion to Google Drive, set:
+To scan both local and Google Drive during a batch run, set:
 
 ```text
-RESUME_STORAGE_PROVIDER=google_drive
+RESUME_STORAGE_PROVIDERS=local,google_drive
 GOOGLE_DRIVE_FOLDER_ID=your-google-drive-folder-id
 GOOGLE_SERVICE_ACCOUNT_FILE=C:\path\to\service-account.json
 ```
@@ -160,7 +170,13 @@ The Google provider uses a service account with read-only Drive access. Share th
 curl.exe -X POST "http://127.0.0.1:8000/batch/run"
 ```
 
-`POST /batch/run-local-drive` still forces the local simulator provider. Service account JSON files should never be committed; `.gitignore` excludes common service-account filename patterns.
+To scan only Google Drive, set `RESUME_STORAGE_PROVIDERS=google_drive`. Service account JSON files should never be committed; `.gitignore` excludes common service-account filename patterns.
+
+Check provider configuration safely:
+
+```powershell
+curl.exe "http://127.0.0.1:8000/debug/storage-provider"
+```
 
 To use the fallback parser as the primary parser during development:
 

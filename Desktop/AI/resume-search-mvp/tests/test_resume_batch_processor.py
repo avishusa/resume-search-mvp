@@ -132,15 +132,24 @@ def test_batch_processor_continues_when_one_resume_extraction_fails(tmp_path) ->
 class FakeStorageProvider:
     provider_name = "fake"
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        provider_name: str = "fake",
+        source_id: str = "fake-1",
+        source_path: str = "fake://resume.txt",
+        file_name: str = "resume.txt",
+        file_bytes: bytes = b"AI Engineer\nPython",
+    ) -> None:
+        self.provider_name = provider_name
+        self._file_bytes = file_bytes
         self.read_called = False
         self._reference = ResumeFileReference(
-            source_id="fake-1",
-            source_path="fake://resume.txt",
-            file_name="resume.txt",
+            source_id=source_id,
+            source_path=source_path,
+            file_name=file_name,
             file_type="text/plain",
             last_modified=datetime.now(UTC),
-            size_bytes=18,
+            size_bytes=len(file_bytes),
             provider_name=self.provider_name,
         )
 
@@ -149,7 +158,7 @@ class FakeStorageProvider:
 
     def read_file(self, file_reference: ResumeFileReference) -> bytes:
         self.read_called = True
-        return b"AI Engineer\nPython"
+        return self._file_bytes
 
 
 def test_batch_processor_uses_storage_provider_abstraction() -> None:
@@ -166,3 +175,78 @@ def test_batch_processor_uses_storage_provider_abstraction() -> None:
     assert storage_provider.read_called is True
     assert response.ingested_count == 1
     assert repository.list_all()[0].source_path == "fake://resume.txt"
+
+
+def test_batch_processor_processes_files_from_multiple_providers() -> None:
+    repository = InMemoryResumeRepository()
+    local_provider = FakeStorageProvider(
+        provider_name="local",
+        source_id="/fake/local/resume.txt",
+        source_path="/fake/local/resume.txt",
+        file_name="local-resume.txt",
+        file_bytes=b"AI Engineer\nPython",
+    )
+    google_provider = FakeStorageProvider(
+        provider_name="google_drive",
+        source_id="drive-file-1",
+        source_path="google_drive://drive-file-1",
+        file_name="google-resume.txt",
+        file_bytes=b"AI Engineer\nFastAPI",
+    )
+    processor = ResumeBatchProcessor(
+        repository=repository,
+        candidate_profile_service=_rule_based_profile_service(),
+        storage_provider=local_provider,
+        storage_providers=[local_provider, google_provider],
+    )
+
+    response = processor.process_local_drive()
+
+    assert response.total_files_seen == 2
+    assert response.ingested_count == 2
+    assert [summary.provider_name for summary in response.providers] == [
+        "local",
+        "google_drive",
+    ]
+    assert {record.provider_name for record in repository.list_all()} == {
+        "local",
+        "google_drive",
+    }
+
+
+def test_batch_processor_identity_uses_provider_and_source_id() -> None:
+    repository = InMemoryResumeRepository()
+    local_provider = FakeStorageProvider(
+        provider_name="local",
+        source_id="/fake/resume.txt",
+        source_path="/fake/resume.txt",
+        file_name="same-name.txt",
+        file_bytes=b"AI Engineer\nPython",
+    )
+    google_provider = FakeStorageProvider(
+        provider_name="google_drive",
+        source_id="drive-file-1",
+        source_path="google_drive://drive-file-1",
+        file_name="same-name.txt",
+        file_bytes=b"AI Engineer\nPython",
+    )
+    processor = ResumeBatchProcessor(
+        repository=repository,
+        candidate_profile_service=_rule_based_profile_service(),
+        storage_provider=local_provider,
+        storage_providers=[local_provider, google_provider],
+    )
+
+    first_response = processor.process_local_drive()
+    second_response = processor.process_local_drive()
+
+    assert first_response.ingested_count == 2
+    assert second_response.skipped_count == 2
+    assert len(repository.list_all()) == 2
+    assert {
+        (record.provider_name, record.source_id, record.file_name)
+        for record in repository.list_all()
+    } == {
+        ("local", "/fake/resume.txt", "same-name.txt"),
+        ("google_drive", "drive-file-1", "same-name.txt"),
+    }
