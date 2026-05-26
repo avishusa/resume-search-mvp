@@ -1,9 +1,11 @@
 import json
+from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
 from app.container import debug_service
 from app.main import create_app
+from app.storage.base import ResumeFileReference
 
 
 class FakeOllamaResponse:
@@ -110,4 +112,59 @@ def test_debug_storage_provider_returns_local_status(tmp_path, monkeypatch) -> N
     assert body["configured_providers"] == ["local"]
     assert body["providers"][0]["provider_name"] == "local"
     assert body["providers"][0]["exists"] is True
+    assert body["providers"][0]["recursive"] is True
     assert body["providers"][0]["supported_file_count"] == 1
+
+
+class FakeGoogleDebugProvider:
+    provider_name = "google_drive"
+    last_folders_seen = 3
+    last_errors: list[str] = []
+
+    def list_resume_files(self) -> list[ResumeFileReference]:
+        return [
+            ResumeFileReference(
+                source_id="drive-file-1",
+                source_path="drive://Recruiting Resumes/Data Science/resume.pdf",
+                file_name="resume.pdf",
+                file_type="application/pdf",
+                last_modified=datetime.now(UTC),
+                size_bytes=123,
+                provider_name=self.provider_name,
+                folder_path="Recruiting Resumes/Data Science",
+            )
+        ]
+
+
+def test_debug_storage_provider_returns_google_recursive_status(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    service_account_file = tmp_path / "service-account.json"
+    service_account_file.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(
+        "app.services.debug_service.create_google_drive_resume_storage_provider",
+        lambda settings: FakeGoogleDebugProvider(),
+    )
+    monkeypatch.setattr(debug_service._settings, "resume_storage_providers", "google_drive")
+    monkeypatch.setattr(debug_service._settings, "google_drive_folder_id", "folder-id")
+    monkeypatch.setattr(
+        debug_service._settings,
+        "google_service_account_file",
+        str(service_account_file),
+    )
+    client = TestClient(create_app())
+
+    response = client.get("/debug/storage-provider")
+
+    assert response.status_code == 200
+    body = response.json()
+    provider_status = body["providers"][0]
+    assert body["configured_providers"] == ["google_drive"]
+    assert provider_status["provider_name"] == "google_drive"
+    assert provider_status["recursive_enabled"] is True
+    assert provider_status["max_depth"] == 10
+    assert provider_status["max_files"] == 1000
+    assert provider_status["can_list_files"] is True
+    assert provider_status["supported_file_count"] == 1
+    assert provider_status["folders_seen"] == 3

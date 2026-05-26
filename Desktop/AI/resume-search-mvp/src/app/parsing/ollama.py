@@ -1,11 +1,16 @@
 import json
 import re
+from threading import local
+from time import perf_counter
 
 import httpx
 from pydantic import ValidationError
 
 from app.parsing.base import ResumeParserError
-from app.parsing.text_cleaning import clean_resume_text_for_llm
+from app.parsing.text_cleaning import (
+    build_resume_digest_for_llm,
+    clean_resume_text_for_llm,
+)
 from app.schemas.candidate import CandidateProfile
 
 
@@ -20,26 +25,101 @@ class OllamaResumeParserProvider:
         base_url: str,
         model: str,
         timeout_seconds: int,
-        max_resume_chars: int = 12000,
+        max_resume_chars: int = 6000,
+        use_resume_digest: bool = True,
+        temperature: float = 0,
+        num_predict: int = 600,
+        num_ctx: int | None = None,
     ) -> None:
+        self._thread_state = local()
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._timeout_seconds = timeout_seconds
         self._max_resume_chars = max_resume_chars
+        self._use_resume_digest = use_resume_digest
+        self._temperature = temperature
+        self._num_predict = num_predict
+        self._num_ctx = num_ctx
         self.last_raw_response_preview: str | None = None
         self.last_ollama_model: str = model
         self.last_cleaned_text_length: int | None = None
         self.last_prompt_text_length: int | None = None
+        self.last_llm_input_chars: int | None = None
+        self.last_digest_used: bool = use_resume_digest
+        self.last_ollama_request_duration_seconds: float | None = None
+
+    @property
+    def last_raw_response_preview(self) -> str | None:
+        return getattr(self._thread_state, "last_raw_response_preview", None)
+
+    @last_raw_response_preview.setter
+    def last_raw_response_preview(self, value: str | None) -> None:
+        self._thread_state.last_raw_response_preview = value
+
+    @property
+    def last_cleaned_text_length(self) -> int | None:
+        return getattr(self._thread_state, "last_cleaned_text_length", None)
+
+    @last_cleaned_text_length.setter
+    def last_cleaned_text_length(self, value: int | None) -> None:
+        self._thread_state.last_cleaned_text_length = value
+
+    @property
+    def last_prompt_text_length(self) -> int | None:
+        return getattr(self._thread_state, "last_prompt_text_length", None)
+
+    @last_prompt_text_length.setter
+    def last_prompt_text_length(self, value: int | None) -> None:
+        self._thread_state.last_prompt_text_length = value
+
+    @property
+    def last_llm_input_chars(self) -> int | None:
+        return getattr(self._thread_state, "last_llm_input_chars", None)
+
+    @last_llm_input_chars.setter
+    def last_llm_input_chars(self, value: int | None) -> None:
+        self._thread_state.last_llm_input_chars = value
+
+    @property
+    def last_digest_used(self) -> bool:
+        return getattr(self._thread_state, "last_digest_used", self._use_resume_digest)
+
+    @last_digest_used.setter
+    def last_digest_used(self, value: bool) -> None:
+        self._thread_state.last_digest_used = value
+
+    @property
+    def last_ollama_request_duration_seconds(self) -> float | None:
+        return getattr(
+            self._thread_state,
+            "last_ollama_request_duration_seconds",
+            None,
+        )
+
+    @last_ollama_request_duration_seconds.setter
+    def last_ollama_request_duration_seconds(self, value: float | None) -> None:
+        self._thread_state.last_ollama_request_duration_seconds = value
 
     def parse(self, resume_text: str) -> CandidateProfile:
         self.last_raw_response_preview = None
         self.last_cleaned_text_length = None
         self.last_prompt_text_length = None
+        self.last_llm_input_chars = None
+        self.last_digest_used = self._use_resume_digest
+        self.last_ollama_request_duration_seconds = 0
         cleaned_resume_text = clean_resume_text_for_llm(resume_text)
         self.last_cleaned_text_length = len(cleaned_resume_text)
+        llm_resume_text = (
+            build_resume_digest_for_llm(
+                cleaned_resume_text,
+                max_chars=self._max_resume_chars,
+            )
+            if self._use_resume_digest
+            else cleaned_resume_text
+        )
         try:
             raw_profile_json = self._generate_profile_json(
-                cleaned_resume_text=cleaned_resume_text,
+                cleaned_resume_text=llm_resume_text,
                 max_resume_chars=self._max_resume_chars,
             )
             self.last_raw_response_preview = raw_profile_json[:500]
@@ -52,6 +132,9 @@ class OllamaResumeParserProvider:
                     ollama_model=self._model,
                     cleaned_text_length=self.last_cleaned_text_length,
                     prompt_text_length=self.last_prompt_text_length,
+                    llm_input_chars=self.last_llm_input_chars,
+                    digest_used=self.last_digest_used,
+                    ollama_request_duration_seconds=self.last_ollama_request_duration_seconds,
                 )
 
             profile_data = self._normalize_profile_data(profile_data)
@@ -74,12 +157,30 @@ class OllamaResumeParserProvider:
                 "prompt_text_length",
                 self.last_prompt_text_length,
             )
+            llm_input_chars = getattr(
+                error,
+                "llm_input_chars",
+                self.last_llm_input_chars,
+            )
+            digest_used = getattr(
+                error,
+                "digest_used",
+                self.last_digest_used,
+            )
+            ollama_request_duration_seconds = getattr(
+                error,
+                "ollama_request_duration_seconds",
+                self.last_ollama_request_duration_seconds,
+            )
             raise ResumeParserError(
                 f"Ollama resume parsing failed: {error}",
                 raw_response_preview=raw_response_preview,
                 ollama_model=self._model,
                 cleaned_text_length=cleaned_text_length,
                 prompt_text_length=prompt_text_length,
+                llm_input_chars=llm_input_chars,
+                digest_used=digest_used,
+                ollama_request_duration_seconds=ollama_request_duration_seconds,
             ) from error
 
     def _generate_profile_json(
@@ -110,20 +211,18 @@ class OllamaResumeParserProvider:
         max_resume_chars: int,
     ) -> str:
         truncated_resume_text = cleaned_resume_text[:max_resume_chars]
+        self.last_llm_input_chars = len(truncated_resume_text)
         prompt = self._build_prompt(truncated_resume_text)
         self.last_prompt_text_length = len(prompt)
 
         try:
             with httpx.Client(timeout=self._timeout_seconds) as client:
+                request_start = perf_counter()
                 response = client.post(
                     f"{self._base_url}/api/generate",
-                    json={
-                        "model": self._model,
-                        "prompt": prompt,
-                        "stream": False,
-                        "format": "json",
-                    },
+                    json=self._build_generate_payload(prompt),
                 )
+                self._add_ollama_request_duration(perf_counter() - request_start)
                 response.raise_for_status()
         except httpx.HTTPStatusError as error:
             response_preview = error.response.text[:500] if error.response else None
@@ -141,7 +240,17 @@ class OllamaResumeParserProvider:
                 ollama_model=self._model,
                 cleaned_text_length=len(cleaned_resume_text),
                 prompt_text_length=len(prompt),
+                llm_input_chars=len(truncated_resume_text),
+                digest_used=self.last_digest_used,
+                ollama_request_duration_seconds=self.last_ollama_request_duration_seconds,
             ) from error
+        except httpx.HTTPError as error:
+            self._add_ollama_request_duration(
+                perf_counter() - request_start
+                if "request_start" in locals()
+                else 0
+            )
+            raise error
 
         response_body = response.json()
         raw_profile_json = response_body.get("response")
@@ -151,8 +260,34 @@ class OllamaResumeParserProvider:
                 ollama_model=self._model,
                 cleaned_text_length=len(cleaned_resume_text),
                 prompt_text_length=len(prompt),
+                llm_input_chars=len(truncated_resume_text),
+                digest_used=self.last_digest_used,
+                ollama_request_duration_seconds=self.last_ollama_request_duration_seconds,
             )
         return raw_profile_json
+
+    def _add_ollama_request_duration(self, duration_seconds: float) -> None:
+        current_duration = self.last_ollama_request_duration_seconds or 0
+        self.last_ollama_request_duration_seconds = round(
+            current_duration + max(duration_seconds, 0),
+            4,
+        )
+
+    def _build_generate_payload(self, prompt: str) -> dict:
+        options = {
+            "temperature": self._temperature,
+            "num_predict": self._num_predict,
+        }
+        if self._num_ctx is not None:
+            options["num_ctx"] = self._num_ctx
+
+        return {
+            "model": self._model,
+            "prompt": prompt,
+            "stream": False,
+            "format": "json",
+            "options": options,
+        }
 
     def _should_retry_with_shorter_text(
         self,
@@ -320,26 +455,15 @@ class OllamaResumeParserProvider:
         return min(max(float(value), 0), 1)
 
     def _build_prompt(self, resume_text: str) -> str:
-        return f"""You are an expert resume information extraction engine.
+        return f"""Extract structured resume data.
 
-Extract structured candidate information from the resume text.
+Return ONLY valid JSON. No markdown. No explanation. Do not guess.
+Use only facts explicitly present in the resume. Missing scalar fields must be null. Missing array fields must be [].
+Prefer the most recent/current role only when explicitly present. Do not infer title from skills.
+confidence_score must be a numeric value from 0 to 1. Do not return "high", "medium", or "low".
+email and phone must be string or null. skills, companies, and education must be arrays.
 
-Rules:
-- Return ONLY valid JSON.
-- Do not include markdown.
-- Do not include explanation.
-- Do not guess.
-- Extract only information explicitly present in the resume.
-- If a field is missing, return null or [].
-- Prefer the most recent/current role for current_title.
-- Do not infer title from skills.
-- Do not infer skills that are not explicitly listed or clearly mentioned.
-- Normalize outputs.
-- confidence_score must be a number between 0 and 1.
-- Do not return confidence_score as a string.
-- Do not return "high", "medium", or "low" for confidence_score.
-
-JSON schema:
+Return exactly this JSON schema:
 {{
   "candidate_name": string or null,
   "email": string or null,

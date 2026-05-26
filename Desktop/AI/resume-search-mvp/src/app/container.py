@@ -29,7 +29,8 @@ skill_catalog = [
     if skill.strip()
 ]
 fallback_resume_parser_provider = RuleBasedResumeParserProvider(
-    skill_catalog=skill_catalog
+    skill_catalog=skill_catalog,
+    contact_only=True,
 )
 
 if settings.resume_parser_provider == "rule_based":
@@ -40,6 +41,10 @@ else:
         model=settings.ollama_model,
         timeout_seconds=settings.ollama_timeout_seconds,
         max_resume_chars=settings.ollama_max_resume_chars,
+        use_resume_digest=settings.ollama_use_resume_digest,
+        temperature=settings.ollama_temperature,
+        num_predict=settings.ollama_num_predict,
+        num_ctx=settings.ollama_num_ctx,
     )
 
 candidate_profile_service = CandidateProfileService(
@@ -59,11 +64,13 @@ resume_batch_processor = ResumeBatchProcessor(
     candidate_profile_service=candidate_profile_service,
     storage_provider=resume_storage_provider,
     storage_providers=resume_storage_providers,
+    parse_concurrency=settings.resume_parse_concurrency,
 )
 local_resume_batch_processor = ResumeBatchProcessor(
     repository=resume_repository,
     candidate_profile_service=candidate_profile_service,
     storage_provider=local_resume_storage_provider,
+    parse_concurrency=settings.resume_parse_concurrency,
 )
 batch_processing_service = ResumeBatchProcessingService(
     batch_processor=resume_batch_processor,

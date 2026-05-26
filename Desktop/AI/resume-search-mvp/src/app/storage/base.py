@@ -12,6 +12,7 @@ class ResumeFileReference:
     last_modified: datetime | None
     size_bytes: int | None
     provider_name: str
+    folder_path: str | None = None
 
 
 class ResumeStorageProvider(Protocol):

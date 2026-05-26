@@ -28,6 +28,18 @@ class ResumeListItem(BaseModel):
     parsed_at: str | None = None
     ingested_at: str | None = None
     extracted_text_preview: str
+    extraction_duration_seconds: float | None = None
+    parsing_duration_seconds: float | None = None
+    total_processing_duration_seconds: float | None = None
+    llm_input_chars: int | None = None
+    digest_used: bool | None = None
+    processing_started_at: str | None = None
+    processing_finished_at: str | None = None
+    parsing_started_at: str | None = None
+    parsing_finished_at: str | None = None
+    task_id: int | None = None
+    worker_slot: str | None = None
+    ollama_request_duration_seconds: float | None = None
     candidate_name: str | None = None
     email: str | None = None
     phone: str | None = None
@@ -61,6 +73,18 @@ class ResumeIngestionItem(BaseModel):
     parsed_at: str | None = None
     ingested_at: str | None = None
     extracted_text_preview: str
+    extraction_duration_seconds: float | None = None
+    parsing_duration_seconds: float | None = None
+    total_processing_duration_seconds: float | None = None
+    llm_input_chars: int | None = None
+    digest_used: bool | None = None
+    processing_started_at: str | None = None
+    processing_finished_at: str | None = None
+    parsing_started_at: str | None = None
+    parsing_finished_at: str | None = None
+    task_id: int | None = None
+    worker_slot: str | None = None
+    ollama_request_duration_seconds: float | None = None
 
 
 class ProviderIngestionSummary(BaseModel):
@@ -85,3 +109,8 @@ class LocalDriveIngestionResponse(BaseModel):
     fallback_count: int = 0
     resumes: list[ResumeIngestionItem]
     providers: list[ProviderIngestionSummary] = Field(default_factory=list)
+    configured_concurrency: int = 1
+    max_observed_parallel_tasks: int = 0
+    total_batch_duration_seconds: float | None = None
+    total_ollama_duration_seconds_sum: float = 0
+    average_ollama_duration_seconds: float | None = None

@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class OllamaDebugResponse(BaseModel):
@@ -9,6 +9,8 @@ class OllamaDebugResponse(BaseModel):
     ollama_model: str
     ollama_timeout_seconds: int
     ollama_max_resume_chars: int
+    ollama_use_resume_digest: bool
+    resume_parse_concurrency: int
     ollama_reachable: bool
     test_generation_success: bool
     error: str | None = None
@@ -31,6 +33,7 @@ class LocalStorageProviderDebugStatus(BaseModel):
     provider_name: str
     directory_path: str
     exists: bool
+    recursive: bool
     supported_file_count: int
     error: str | None = None
 
@@ -40,9 +43,14 @@ class GoogleDriveStorageProviderDebugStatus(BaseModel):
     folder_id_present: bool
     service_account_file_configured: bool
     service_account_file_exists: bool
+    recursive_enabled: bool
+    max_depth: int
+    max_files: int
     can_authenticate: bool
     can_list_files: bool
     supported_file_count: int | None = None
+    folders_seen: int | None = None
+    errors: list[str] = Field(default_factory=list)
     error: str | None = None
 
 

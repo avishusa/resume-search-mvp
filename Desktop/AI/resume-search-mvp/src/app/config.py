@@ -23,8 +23,28 @@ class Settings(BaseSettings):
         validation_alias="OLLAMA_TIMEOUT_SECONDS",
     )
     ollama_max_resume_chars: int = Field(
-        12000,
+        6000,
         validation_alias="OLLAMA_MAX_RESUME_CHARS",
+    )
+    ollama_use_resume_digest: bool = Field(
+        True,
+        validation_alias="OLLAMA_USE_RESUME_DIGEST",
+    )
+    ollama_temperature: float = Field(
+        0,
+        validation_alias="OLLAMA_TEMPERATURE",
+    )
+    ollama_num_predict: int = Field(
+        600,
+        validation_alias="OLLAMA_NUM_PREDICT",
+    )
+    ollama_num_ctx: int | None = Field(
+        None,
+        validation_alias="OLLAMA_NUM_CTX",
+    )
+    resume_parse_concurrency: int = Field(
+        1,
+        validation_alias="RESUME_PARSE_CONCURRENCY",
     )
     database_url: str = Field(
         "sqlite:///./data/resume_search.db",
@@ -39,6 +59,10 @@ class Settings(BaseSettings):
     local_drive_resume_dir: str = Field(
         "data/drive_resumes",
         validation_alias="LOCAL_DRIVE_RESUME_DIR",
+    )
+    local_drive_recursive: bool = Field(
+        True,
+        validation_alias="LOCAL_DRIVE_RECURSIVE",
     )
     resume_storage_provider: str = Field(
         "local",
@@ -61,6 +85,18 @@ class Settings(BaseSettings):
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document,"
         "text/plain",
         validation_alias="GOOGLE_DRIVE_ALLOWED_MIME_TYPES",
+    )
+    google_drive_recursive: bool = Field(
+        True,
+        validation_alias="GOOGLE_DRIVE_RECURSIVE",
+    )
+    google_drive_max_depth: int = Field(
+        10,
+        validation_alias="GOOGLE_DRIVE_MAX_DEPTH",
+    )
+    google_drive_max_files: int = Field(
+        1000,
+        validation_alias="GOOGLE_DRIVE_MAX_FILES",
     )
     cors_allowed_origins: str = Field(
         "http://localhost:5173,"

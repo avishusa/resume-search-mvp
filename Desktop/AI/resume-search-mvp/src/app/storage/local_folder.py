@@ -14,8 +14,9 @@ class SupportedFileType:
 class LocalFolderResumeStorageProvider:
     provider_name = "local"
 
-    def __init__(self, resume_folder: Path | str) -> None:
+    def __init__(self, resume_folder: Path | str, recursive: bool = True) -> None:
         self._resume_folder = Path(resume_folder)
+        self._recursive = recursive
         self._supported_file_types = {
             ".pdf": SupportedFileType(".pdf", "application/pdf"),
             ".docx": SupportedFileType(
@@ -30,7 +31,12 @@ class LocalFolderResumeStorageProvider:
             return []
 
         references: list[ResumeFileReference] = []
-        for path in sorted(self._resume_folder.iterdir()):
+        file_paths = (
+            self._resume_folder.rglob("*")
+            if self._recursive
+            else self._resume_folder.iterdir()
+        )
+        for path in sorted(file_paths):
             if not path.is_file():
                 continue
 
@@ -49,6 +55,7 @@ class LocalFolderResumeStorageProvider:
                     last_modified=datetime.fromtimestamp(stat.st_mtime, UTC),
                     size_bytes=stat.st_size,
                     provider_name=self.provider_name,
+                    folder_path=str(path.parent.resolve()),
                 )
             )
 

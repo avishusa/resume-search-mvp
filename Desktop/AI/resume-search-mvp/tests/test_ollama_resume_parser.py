@@ -107,9 +107,110 @@ def test_ollama_provider_posts_to_generate_and_parses_response_field(monkeypatch
     assert fake_client.last_payload["model"] == "llama3.1:8b"
     assert fake_client.last_payload["stream"] is False
     assert fake_client.last_payload["format"] == "json"
-    assert set(fake_client.last_payload) == {"model", "prompt", "stream", "format"}
+    assert fake_client.last_payload["options"]["temperature"] == 0
+    assert fake_client.last_payload["options"]["num_predict"] == 600
+    assert set(fake_client.last_payload) == {
+        "model",
+        "prompt",
+        "stream",
+        "format",
+        "options",
+    }
     assert profile.parser_used == "ollama"
     assert profile.current_title == "AI Engineer"
+
+
+def test_ollama_provider_respects_generation_options(monkeypatch) -> None:
+    fake_client = FakeOllamaClient(
+        FakeOllamaResponse(
+            {
+                "response": json.dumps(
+                    {
+                        "candidate_name": "Jane Candidate",
+                        "email": "jane@example.com",
+                        "phone": None,
+                        "current_title": "AI Engineer",
+                        "skills": ["Python"],
+                        "total_experience_years": None,
+                        "companies": [],
+                        "education": [],
+                        "resume_summary": "AI Engineer.",
+                        "confidence_score": 0.8,
+                    }
+                )
+            }
+        )
+    )
+    monkeypatch.setattr(
+        "app.parsing.ollama.httpx.Client",
+        lambda timeout: fake_client,
+    )
+    provider = OllamaResumeParserProvider(
+        base_url="http://localhost:11434",
+        model="llama3.1:8b",
+        timeout_seconds=3,
+        temperature=0,
+        num_predict=321,
+        num_ctx=4096,
+    )
+
+    profile = provider.parse("AI Engineer\nPython")
+
+    assert profile.parser_used == "ollama"
+    assert fake_client.last_payload["options"] == {
+        "temperature": 0,
+        "num_predict": 321,
+        "num_ctx": 4096,
+    }
+
+
+def test_ollama_provider_receives_resume_digest_when_enabled(monkeypatch) -> None:
+    fake_client = FakeOllamaClient(
+        FakeOllamaResponse(
+            {
+                "response": json.dumps(
+                    {
+                        "candidate_name": "Jane Candidate",
+                        "email": None,
+                        "phone": None,
+                        "current_title": "Machine Learning Engineer",
+                        "skills": ["Python", "Machine Learning"],
+                        "total_experience_years": None,
+                        "companies": [],
+                        "education": [],
+                        "resume_summary": "Machine Learning Engineer.",
+                        "confidence_score": 0.8,
+                    }
+                )
+            }
+        )
+    )
+    monkeypatch.setattr(
+        "app.parsing.ollama.httpx.Client",
+        lambda timeout: fake_client,
+    )
+    provider = OllamaResumeParserProvider(
+        base_url="http://localhost:11434",
+        model="llama3.1:8b",
+        timeout_seconds=3,
+        max_resume_chars=4000,
+        use_resume_digest=True,
+    )
+    resume_text = (
+        "Jane Candidate\nMachine Learning Engineer\n"
+        + ("Verbose project detail. " * 300)
+        + "\nTechnical Skills\nPython, Machine Learning\n"
+        + "TAIL_MARKER_SHOULD_NOT_APPEAR"
+    )
+
+    profile = provider.parse(resume_text)
+
+    prompt = fake_client.last_payload["prompt"]
+    assert profile.parser_used == "ollama"
+    assert provider.last_digest_used is True
+    assert provider.last_llm_input_chars <= 4000
+    assert "Technical Skills" in prompt
+    assert "Python, Machine Learning" in prompt
 
 
 def test_successful_mocked_ollama_response_returns_ollama_parser(monkeypatch) -> None:
@@ -410,6 +511,41 @@ def test_ollama_error_triggers_rule_based_fallback(monkeypatch) -> None:
 
     assert profile.parser_used == "rule_based"
     assert profile.email == "jane@example.com"
+
+
+def test_contact_only_fallback_only_fills_personal_fields_when_ollama_fails(
+    monkeypatch,
+) -> None:
+    service = CandidateProfileService(
+        primary_parser=OllamaResumeParserProvider(
+            base_url="http://localhost:11434",
+            model="llama3.1:8b",
+            timeout_seconds=1,
+        ),
+        fallback_parser=RuleBasedResumeParserProvider(
+            skill_catalog=["Python"],
+            contact_only=True,
+        ),
+    )
+    monkeypatch.setattr(
+        "app.parsing.ollama.httpx.Client",
+        lambda timeout: FakeOllamaClient(
+            FakeOllamaResponse(error=httpx.TimeoutException("timeout"))
+        ),
+    )
+
+    result = service.parse_with_metadata(
+        "Jane Candidate\nAI Engineer\njane@example.com\n"
+        "Skills: Python\n5 years of experience"
+    )
+
+    assert result.profile.parser_used == "rule_based"
+    assert result.profile.parsing_status == "review_required"
+    assert result.profile.candidate_name == "Jane Candidate"
+    assert result.profile.email == "jane@example.com"
+    assert result.profile.current_title is None
+    assert result.profile.skills == []
+    assert result.profile.total_experience_years is None
 
 
 def _http_500_error(message: str = "model overloaded") -> httpx.HTTPStatusError:

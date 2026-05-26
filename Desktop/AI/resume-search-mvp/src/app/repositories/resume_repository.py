@@ -27,6 +27,18 @@ class ResumeRecord:
     candidate_profile: CandidateProfile | None = None
     provider_name: str = "local"
     source_id: str | None = None
+    extraction_duration_seconds: float | None = None
+    parsing_duration_seconds: float | None = None
+    total_processing_duration_seconds: float | None = None
+    llm_input_chars: int | None = None
+    digest_used: bool | None = None
+    processing_started_at: datetime | None = None
+    processing_finished_at: datetime | None = None
+    parsing_started_at: datetime | None = None
+    parsing_finished_at: datetime | None = None
+    task_id: int | None = None
+    worker_slot: str | None = None
+    ollama_request_duration_seconds: float | None = None
 
     @property
     def mime_type(self) -> str:

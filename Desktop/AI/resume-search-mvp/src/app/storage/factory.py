@@ -50,7 +50,10 @@ def create_resume_storage_provider_by_name(
 
 
 def create_local_resume_storage_provider(settings: Settings) -> ResumeStorageProvider:
-    return LocalFolderResumeStorageProvider(Path(settings.local_drive_resume_dir))
+    return LocalFolderResumeStorageProvider(
+        Path(settings.local_drive_resume_dir),
+        recursive=settings.local_drive_recursive,
+    )
 
 
 def create_google_drive_resume_storage_provider(
@@ -79,4 +82,7 @@ def create_google_drive_resume_storage_provider(
         folder_id=settings.google_drive_folder_id,
         service_account_file=settings.google_service_account_file,
         allowed_mime_types=allowed_mime_types,
+        recursive=settings.google_drive_recursive,
+        max_depth=settings.google_drive_max_depth,
+        max_files=settings.google_drive_max_files,
     )

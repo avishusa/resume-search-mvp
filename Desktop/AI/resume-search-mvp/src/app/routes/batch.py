@@ -24,7 +24,7 @@ def run_local_drive_batch(force: bool = False) -> BatchRunResponse:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(error),
         ) from error
-    return _to_response(batch_run, providers=summary.providers)
+    return _to_response(batch_run, summary=summary)
 
 
 @router.post("/run", response_model=BatchRunResponse)
@@ -38,7 +38,7 @@ def run_configured_batch(force: bool = False) -> BatchRunResponse:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(error),
         ) from error
-    return _to_response(batch_run, providers=summary.providers)
+    return _to_response(batch_run, summary=summary)
 
 
 @router.get("/runs", response_model=BatchRunListResponse)
@@ -72,7 +72,7 @@ def get_batch_run(batch_id: str) -> BatchRunResponse:
     return _to_response(batch_run)
 
 
-def _to_response(batch_run, providers=None) -> BatchRunResponse:
+def _to_response(batch_run, summary=None) -> BatchRunResponse:
     return BatchRunResponse(
         batch_id=batch_run.batch_id,
         started_at=_datetime_to_iso(batch_run.started_at),
@@ -88,7 +88,21 @@ def _to_response(batch_run, providers=None) -> BatchRunResponse:
         parsed_count=batch_run.parsed_count,
         fallback_count=batch_run.fallback_count,
         error_message=batch_run.error_message,
-        providers=providers or [],
+        providers=summary.providers if summary else [],
+        resume_diagnostics=summary.resumes if summary else [],
+        configured_concurrency=summary.configured_concurrency if summary else None,
+        max_observed_parallel_tasks=summary.max_observed_parallel_tasks
+        if summary
+        else None,
+        total_batch_duration_seconds=summary.total_batch_duration_seconds
+        if summary
+        else None,
+        total_ollama_duration_seconds_sum=summary.total_ollama_duration_seconds_sum
+        if summary
+        else None,
+        average_ollama_duration_seconds=summary.average_ollama_duration_seconds
+        if summary
+        else None,
     )
 
 

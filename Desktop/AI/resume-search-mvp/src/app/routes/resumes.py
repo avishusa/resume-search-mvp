@@ -70,6 +70,26 @@ def list_resumes() -> list[ResumeListItem]:
             parsed_at=record.parsed_at.isoformat() if record.parsed_at else None,
             ingested_at=record.ingested_at.isoformat(),
             extracted_text_preview=record.extracted_text_preview,
+            extraction_duration_seconds=record.extraction_duration_seconds,
+            parsing_duration_seconds=record.parsing_duration_seconds,
+            total_processing_duration_seconds=record.total_processing_duration_seconds,
+            llm_input_chars=record.llm_input_chars,
+            digest_used=record.digest_used,
+            processing_started_at=record.processing_started_at.isoformat()
+            if record.processing_started_at
+            else None,
+            processing_finished_at=record.processing_finished_at.isoformat()
+            if record.processing_finished_at
+            else None,
+            parsing_started_at=record.parsing_started_at.isoformat()
+            if record.parsing_started_at
+            else None,
+            parsing_finished_at=record.parsing_finished_at.isoformat()
+            if record.parsing_finished_at
+            else None,
+            task_id=record.task_id,
+            worker_slot=record.worker_slot,
+            ollama_request_duration_seconds=record.ollama_request_duration_seconds,
             candidate_name=record.candidate_profile.candidate_name
             if record.candidate_profile
             else None,

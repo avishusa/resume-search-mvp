@@ -53,6 +53,31 @@ def test_local_folder_provider_reads_file_bytes(tmp_path) -> None:
     assert provider.read_file(file_reference) == b"AI Engineer"
 
 
+def test_local_folder_provider_recursively_finds_supported_files(tmp_path) -> None:
+    nested_folder = tmp_path / "Data Science" / "2024"
+    nested_folder.mkdir(parents=True)
+    (nested_folder / "nested.txt").write_text("Data Scientist", encoding="utf-8")
+    (nested_folder / "notes.md").write_text("not a resume", encoding="utf-8")
+    (tmp_path / "root.pdf").write_bytes(b"%PDF")
+    provider = LocalFolderResumeStorageProvider(tmp_path)
+
+    files = provider.list_resume_files()
+
+    assert [file.file_name for file in files] == ["nested.txt", "root.pdf"]
+
+
+def test_local_folder_provider_can_scan_top_level_only(tmp_path) -> None:
+    nested_folder = tmp_path / "Data Science"
+    nested_folder.mkdir()
+    (nested_folder / "nested.txt").write_text("Data Scientist", encoding="utf-8")
+    (tmp_path / "root.txt").write_text("AI Engineer", encoding="utf-8")
+    provider = LocalFolderResumeStorageProvider(tmp_path, recursive=False)
+
+    files = provider.list_resume_files()
+
+    assert [file.file_name for file in files] == ["root.txt"]
+
+
 class FakeGoogleRequest:
     def __init__(self, response) -> None:
         self._response = response
@@ -184,6 +209,7 @@ def test_google_drive_provider_filters_and_maps_metadata() -> None:
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "text/plain",
         ],
+        recursive=False,
         drive_service=service,
     )
 
@@ -191,13 +217,176 @@ def test_google_drive_provider_filters_and_maps_metadata() -> None:
 
     assert [file.file_name for file in files] == ["resume.pdf", "resume.docx"]
     assert files[0].source_id == "pdf-1"
-    assert files[0].source_path == "google_drive://pdf-1"
+    assert files[0].source_path == "drive://folder-id/resume.pdf"
+    assert files[0].folder_path == "folder-id"
     assert files[0].file_type == "application/pdf"
     assert files[0].provider_name == "google_drive"
     assert files[0].size_bytes == 1234
     assert files[0].last_modified.isoformat() == "2026-05-08T10:30:00+00:00"
     assert service.files_resource.list_kwargs["q"] == (
         "'folder-id' in parents and trashed = false"
+    )
+
+
+class RecursiveFakeGoogleFilesResource:
+    def __init__(self) -> None:
+        self.download_file_id = None
+        self.listed_parent_ids: list[str] = []
+        self.folder_names = {
+            "root": "Recruiting Resumes",
+            "folder-ds": "Data Science",
+            "folder-2024": "2024",
+        }
+        self.children_by_parent = {
+            "root": [
+                {
+                    "id": "folder-ds",
+                    "name": "Data Science",
+                    "mimeType": "application/vnd.google-apps.folder",
+                },
+                {
+                    "id": "root-pdf",
+                    "name": "Root Resume.pdf",
+                    "mimeType": "application/pdf",
+                    "modifiedTime": "2026-05-08T10:30:00Z",
+                    "size": "100",
+                },
+                {
+                    "id": "image-1",
+                    "name": "photo.png",
+                    "mimeType": "image/png",
+                },
+            ],
+            "folder-ds": [
+                {
+                    "id": "folder-2024",
+                    "name": "2024",
+                    "mimeType": "application/vnd.google-apps.folder",
+                },
+                {
+                    "id": "nested-docx",
+                    "name": "Nested Resume.docx",
+                    "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    "modifiedTime": "2026-05-08T11:00:00Z",
+                    "size": "200",
+                },
+            ],
+            "folder-2024": [
+                {
+                    "id": "deep-txt",
+                    "name": "Deep Resume.txt",
+                    "mimeType": "text/plain",
+                    "modifiedTime": "2026-05-08T12:00:00Z",
+                    "size": "300",
+                },
+            ],
+        }
+
+    def list(self, **kwargs):
+        parent_id = kwargs["q"].split("'")[1]
+        self.listed_parent_ids.append(parent_id)
+        return FakeGoogleRequest({"files": self.children_by_parent.get(parent_id, [])})
+
+    def get(self, **kwargs):
+        folder_id = kwargs["fileId"]
+        return FakeGoogleRequest({"id": folder_id, "name": self.folder_names[folder_id]})
+
+    def get_media(self, **kwargs):
+        self.download_file_id = kwargs["fileId"]
+        return FakeGoogleRequest(b"downloaded resume bytes")
+
+
+class RecursiveFakeGoogleDriveService:
+    def __init__(self) -> None:
+        self.files_resource = RecursiveFakeGoogleFilesResource()
+
+    def files(self):
+        return self.files_resource
+
+
+def _recursive_google_provider(
+    service: RecursiveFakeGoogleDriveService,
+    max_depth: int = 10,
+    max_files: int = 1000,
+) -> GoogleDriveResumeStorageProvider:
+    return GoogleDriveResumeStorageProvider(
+        folder_id="root",
+        service_account_file="service-account.json",
+        allowed_mime_types=[
+            "application/pdf",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "text/plain",
+        ],
+        recursive=True,
+        max_depth=max_depth,
+        max_files=max_files,
+        drive_service=service,
+    )
+
+
+def test_google_drive_provider_recursively_finds_supported_files() -> None:
+    service = RecursiveFakeGoogleDriveService()
+    provider = _recursive_google_provider(service)
+
+    files = provider.list_resume_files()
+
+    assert [file.file_name for file in files] == [
+        "Deep Resume.txt",
+        "Nested Resume.docx",
+        "Root Resume.pdf",
+    ]
+    assert "image-1" not in [file.source_id for file in files]
+    assert provider.last_folders_seen == 3
+
+
+def test_google_drive_provider_stops_at_max_depth() -> None:
+    service = RecursiveFakeGoogleDriveService()
+    provider = _recursive_google_provider(service, max_depth=1)
+
+    files = provider.list_resume_files()
+
+    assert [file.file_name for file in files] == [
+        "Nested Resume.docx",
+        "Root Resume.pdf",
+    ]
+    assert "folder-2024" not in service.files_resource.listed_parent_ids
+
+
+def test_google_drive_provider_stops_at_max_files() -> None:
+    service = RecursiveFakeGoogleDriveService()
+    provider = _recursive_google_provider(service, max_files=1)
+
+    files = provider.list_resume_files()
+
+    assert len(files) == 1
+
+
+def test_google_drive_provider_avoids_duplicate_folder_visits() -> None:
+    service = RecursiveFakeGoogleDriveService()
+    service.files_resource.children_by_parent["root"].append(
+        {
+            "id": "folder-ds",
+            "name": "Data Science",
+            "mimeType": "application/vnd.google-apps.folder",
+        }
+    )
+    provider = _recursive_google_provider(service)
+
+    provider.list_resume_files()
+
+    assert service.files_resource.listed_parent_ids.count("folder-ds") == 1
+
+
+def test_google_drive_reference_includes_folder_path_and_source_path() -> None:
+    service = RecursiveFakeGoogleDriveService()
+    provider = _recursive_google_provider(service)
+
+    files = provider.list_resume_files()
+    deep_file = next(file for file in files if file.source_id == "deep-txt")
+
+    assert deep_file.folder_path == "Recruiting Resumes/Data Science/2024"
+    assert deep_file.source_path == (
+        "drive://Recruiting Resumes/Data Science/2024/Deep Resume.txt"
     )
 
 

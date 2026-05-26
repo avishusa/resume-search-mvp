@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 
-from app.schemas.resume import ProviderIngestionSummary
+from app.schemas.resume import ProviderIngestionSummary, ResumeIngestionItem
 
 
 class BatchRunResponse(BaseModel):
@@ -17,6 +17,12 @@ class BatchRunResponse(BaseModel):
     fallback_count: int
     error_message: str | None = None
     providers: list[ProviderIngestionSummary] = Field(default_factory=list)
+    resume_diagnostics: list[ResumeIngestionItem] = Field(default_factory=list)
+    configured_concurrency: int | None = None
+    max_observed_parallel_tasks: int | None = None
+    total_batch_duration_seconds: float | None = None
+    total_ollama_duration_seconds_sum: float | None = None
+    average_ollama_duration_seconds: float | None = None
 
 
 class BatchRunListResponse(BaseModel):

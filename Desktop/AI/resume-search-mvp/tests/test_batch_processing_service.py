@@ -170,3 +170,21 @@ def test_nightly_scheduler_is_disabled_by_default(monkeypatch) -> None:
     monkeypatch.delenv("ENABLE_NIGHTLY_BATCH", raising=False)
 
     assert Settings().enable_nightly_batch is False
+
+
+def test_resume_parse_concurrency_defaults_to_one(monkeypatch) -> None:
+    monkeypatch.delenv("RESUME_PARSE_CONCURRENCY", raising=False)
+
+    assert Settings(_env_file=None).resume_parse_concurrency == 1
+
+
+def test_ollama_generation_option_defaults(monkeypatch) -> None:
+    monkeypatch.delenv("OLLAMA_TEMPERATURE", raising=False)
+    monkeypatch.delenv("OLLAMA_NUM_PREDICT", raising=False)
+    monkeypatch.delenv("OLLAMA_NUM_CTX", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.ollama_temperature == 0
+    assert settings.ollama_num_predict == 600
+    assert settings.ollama_num_ctx is None

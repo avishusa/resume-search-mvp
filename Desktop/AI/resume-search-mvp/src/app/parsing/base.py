@@ -11,12 +11,18 @@ class ResumeParserError(Exception):
         ollama_model: str | None = None,
         cleaned_text_length: int | None = None,
         prompt_text_length: int | None = None,
+        llm_input_chars: int | None = None,
+        digest_used: bool | None = None,
+        ollama_request_duration_seconds: float | None = None,
     ) -> None:
         super().__init__(message)
         self.raw_response_preview = raw_response_preview
         self.ollama_model = ollama_model
         self.cleaned_text_length = cleaned_text_length
         self.prompt_text_length = prompt_text_length
+        self.llm_input_chars = llm_input_chars
+        self.digest_used = digest_used
+        self.ollama_request_duration_seconds = ollama_request_duration_seconds
 
 
 class ResumeParserProvider(Protocol):

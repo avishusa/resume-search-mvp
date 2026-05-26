@@ -62,6 +62,8 @@ class DebugService:
             ollama_model=self._settings.ollama_model,
             ollama_timeout_seconds=self._settings.ollama_timeout_seconds,
             ollama_max_resume_chars=self._settings.ollama_max_resume_chars,
+            ollama_use_resume_digest=self._settings.ollama_use_resume_digest,
+            resume_parse_concurrency=self._settings.resume_parse_concurrency,
             ollama_reachable=ollama_reachable,
             test_generation_success=test_generation_success,
             error=error,
@@ -92,6 +94,7 @@ class DebugService:
                         provider_name=provider_name,
                         directory_path="",
                         exists=False,
+                        recursive=False,
                         supported_file_count=0,
                         error=f"Unsupported resume storage provider: {provider_name}",
                     )
@@ -105,7 +108,8 @@ class DebugService:
     def _check_local_storage_provider(self) -> LocalStorageProviderDebugStatus:
         try:
             provider = LocalFolderResumeStorageProvider(
-                self._settings.local_drive_resume_dir
+                self._settings.local_drive_resume_dir,
+                recursive=self._settings.local_drive_recursive,
             )
             directory_path = str(Path(self._settings.local_drive_resume_dir))
             directory_exists = Path(self._settings.local_drive_resume_dir).exists()
@@ -114,6 +118,7 @@ class DebugService:
                 provider_name="local",
                 directory_path=directory_path,
                 exists=directory_exists,
+                recursive=self._settings.local_drive_recursive,
                 supported_file_count=supported_file_count,
             )
         except Exception as exception:
@@ -121,6 +126,7 @@ class DebugService:
                 provider_name="local",
                 directory_path=self._settings.local_drive_resume_dir,
                 exists=False,
+                recursive=self._settings.local_drive_recursive,
                 supported_file_count=0,
                 error=str(exception),
             )
@@ -139,9 +145,14 @@ class DebugService:
             folder_id_present=bool(folder_id),
             service_account_file_configured=bool(service_account_file),
             service_account_file_exists=service_account_file_exists,
+            recursive_enabled=self._settings.google_drive_recursive,
+            max_depth=self._settings.google_drive_max_depth,
+            max_files=self._settings.google_drive_max_files,
             can_authenticate=False,
             can_list_files=False,
             supported_file_count=None,
+            folders_seen=None,
+            errors=[],
         )
 
         if not folder_id or not service_account_file:
@@ -157,6 +168,10 @@ class DebugService:
             status.can_authenticate = True
             status.can_list_files = True
             status.supported_file_count = len(files)
+            status.folders_seen = provider.last_folders_seen
+            status.errors = provider.last_errors
+            if provider.last_errors:
+                status.error = "; ".join(provider.last_errors)
         except Exception as exception:
             status.error = str(exception)
 

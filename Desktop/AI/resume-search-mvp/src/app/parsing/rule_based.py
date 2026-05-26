@@ -38,7 +38,12 @@ KNOWN_TITLE_PHRASES = [
 class RuleBasedResumeParserProvider:
     parser_name = "rule_based"
 
-    def __init__(self, skill_catalog: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        skill_catalog: list[str] | None = None,
+        contact_only: bool = False,
+    ) -> None:
+        self._contact_only = contact_only
         self._skill_catalog = skill_catalog or [
             "Python",
             "FastAPI",
@@ -61,8 +66,29 @@ class RuleBasedResumeParserProvider:
         cleaned_resume_text = clean_resume_text_for_llm(resume_text)
         email = self._extract_email(cleaned_resume_text)
         phone = self._extract_phone(cleaned_resume_text)
-        current_title = self._extract_current_title(cleaned_resume_text)
         candidate_name = self._extract_candidate_name(cleaned_resume_text)
+
+        if self._contact_only:
+            return CandidateProfile(
+                candidate_name=candidate_name,
+                email=email,
+                phone=phone,
+                current_title=None,
+                skills=[],
+                total_experience_years=None,
+                companies=[],
+                education=[],
+                resume_summary="",
+                confidence_score=self._calculate_contact_confidence_score(
+                    candidate_name=candidate_name,
+                    email=email,
+                    phone=phone,
+                ),
+                parsing_status="review_required",
+                parser_used="rule_based",
+            )
+
+        current_title = self._extract_current_title(cleaned_resume_text)
         skills = self._extract_skills(cleaned_resume_text)
         total_experience_years = self._extract_total_experience_years(
             cleaned_resume_text
@@ -205,6 +231,21 @@ class RuleBasedResumeParserProvider:
         if total_experience_years is not None:
             score += 0.1
         return min(score, 0.85)
+
+    def _calculate_contact_confidence_score(
+        self,
+        candidate_name: str | None,
+        email: str | None,
+        phone: str | None,
+    ) -> float:
+        score = 0.1
+        if candidate_name:
+            score += 0.25
+        if email:
+            score += 0.35
+        if phone:
+            score += 0.2
+        return min(score, 0.7)
 
     def _build_summary(self, current_title: str | None, skills: list[str]) -> str:
         if current_title and skills:

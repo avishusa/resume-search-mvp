@@ -12,6 +12,9 @@ class CandidateProfileParseResult:
     ollama_error: str | None = None
     ollama_raw_response_preview: str | None = None
     ollama_model: str | None = None
+    llm_input_chars: int | None = None
+    digest_used: bool | None = None
+    ollama_request_duration_seconds: float | None = None
 
 
 class CandidateProfileService:
@@ -40,19 +43,29 @@ class CandidateProfileService:
                     None,
                 ),
                 ollama_model=getattr(self._primary_parser, "last_ollama_model", None),
+                llm_input_chars=getattr(
+                    self._primary_parser,
+                    "last_llm_input_chars",
+                    None,
+                ),
+                digest_used=getattr(self._primary_parser, "last_digest_used", None),
+                ollama_request_duration_seconds=getattr(
+                    self._primary_parser,
+                    "last_ollama_request_duration_seconds",
+                    None,
+                ),
             )
         except ResumeParserError as error:
             fallback_profile = self._fallback_parser.parse(resume_text)
-            fallback_profile = self._add_experience_if_needed(
-                fallback_profile,
-                resume_text,
-            )
             return CandidateProfileParseResult(
                 profile=fallback_profile,
                 parsing_error=str(error),
                 ollama_error=str(error),
                 ollama_raw_response_preview=error.raw_response_preview,
                 ollama_model=error.ollama_model,
+                llm_input_chars=error.llm_input_chars,
+                digest_used=error.digest_used,
+                ollama_request_duration_seconds=error.ollama_request_duration_seconds,
             )
 
     def _add_experience_if_needed(
